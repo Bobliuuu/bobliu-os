@@ -6,8 +6,9 @@
 .set CHECKSUM, -(MAGIC + FLAGS) # checksum of above, to prove we are multiboot
 
 # Extern
-# .extern call_global_constructors
-# .extern kernel_main
+.extern kernel_early
+.extern call_global_constructors
+.extern kernel_main
 
 # Declare a header as in the Multiboot Standard.
 .section .multiboot
@@ -27,18 +28,39 @@ stack_top:
 .section .text
 .global _start
 .type _start, @function
+
+# start method
 _start:
-	movl $stack_top, %esp
+    movl $stack_top, %esp
 
-	# Call the global constructors.
-	call _init
+    # Save multiboot regs immediately (GRUB gives them in eax/ebx)
+    push %eax            # magic
+    push %ebx            # mbi
 
-	# Transfer control to the main kernel.
-	#call call_global_constructors
-	call kernel_main
+    # ---- early init (magic, mbi) ----
+    movl 4(%esp), %eax   # reload saved magic
+    movl 0(%esp), %ebx   # reload saved mbi
+    push %ebx
+    push %eax
+    call kernel_early
+    add $8, %esp
 
-	# Hang if kernel_main unexpectedly returns.
-	cli
-1:	hlt
-	jmp 1b
+    # ---- constructors ----
+    call call_global_constructors
+	
+	# VGA marker: write 'A' at cell 4
+    mov $0xB8000, %edi
+    movw $0x1F41, 8(%edi)
+
+    # ---- kernel_main (magic, mbi) ----
+    movl 4(%esp), %eax   # reload saved magic
+    movl 0(%esp), %ebx   # reload saved mbi
+    push %ebx
+    push %eax
+    call kernel_main
+    add $8, %esp
+
+    cli
+1:  hlt
+    jmp 1b
 .size _start, . - _start

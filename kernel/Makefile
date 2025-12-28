@@ -30,17 +30,33 @@ ARCHDIR=arch/$(HOSTARCH)
 include $(ARCHDIR)/make.config
 
 CFLAGS:=$(CFLAGS) $(KERNEL_ARCH_CFLAGS)
+CFLAGS += -fstack-protector-strong -fno-omit-frame-pointer -Wstack-protector
 CPPFLAGS:=$(CPPFLAGS) $(KERNEL_ARCH_CPPFLAGS)
 LDFLAGS:=$(LDFLAGS) $(KERNEL_ARCH_LDFLAGS)
 LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
 
 # For tests
-#kernel/early.o kernel/ctor_test.o
-KERNEL_C_OBJS := kernel/kernel.o $(ARCHDIR)/shell/shell.o
+#$(ARCHDIR)/test/ctor_test.o $(ARCHDIR)/test/ssp_test.o
+# For shell
+#$(ARCHDIR)/shell/shell.o
+KERNEL_C_OBJS := kernel/kernel.o $(ARCHDIR)/cpu/call.o $(ARCHDIR)/cpu/early.o $(ARCHDIR)/shell/shell.o
 KERNEL_OBJS := $(strip $(KERNEL_ARCH_OBJS) $(KERNEL_C_OBJS))
 
-OBJS := $(ARCHDIR)/crti.o $(ARCHDIR)/crtbegin.o $(KERNEL_OBJS) $(ARCHDIR)/crtend.o $(ARCHDIR)/crtn.o
-LINK_LIST := $(LDFLAGS) $(ARCHDIR)/crti.o $(ARCHDIR)/crtbegin.o $(KERNEL_OBJS) $(LIBS) $(ARCHDIR)/crtend.o $(ARCHDIR)/crtn.o
+OBJS=\
+$(ARCHDIR)/crti.o \
+$(ARCHDIR)/crtbegin.o \
+$(KERNEL_OBJS) \
+$(ARCHDIR)/crtend.o \
+$(ARCHDIR)/crtn.o \
+
+LINK_LIST=\
+$(LDFLAGS) \
+$(ARCHDIR)/crti.o \
+$(ARCHDIR)/crtbegin.o \
+$(KERNEL_OBJS) \
+$(LIBS) \
+$(ARCHDIR)/crtend.o \
+$(ARCHDIR)/crtn.o \
 
 .PHONY: all clean install install-headers install-kernel
 .SUFFIXES: .o .c .S

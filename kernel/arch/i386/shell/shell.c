@@ -61,7 +61,7 @@ static void cmd_panic(void) {
 }
 
 void shell_init(void) {
-    printf("\n");
+    //printf("\n");
     printf("Kernel shell ready. Type 'help'.\n");
     shell_prompt();
 }

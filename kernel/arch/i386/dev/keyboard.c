@@ -35,6 +35,8 @@ static int  line_len = 0;
 static volatile bool g_shift = false;
 static volatile bool g_caps  = false;
 
+static bool shell_enabled = false;
+
 // Basic US keymap (set 1). Index = scancode (0..127).
 // Only includes printable keys you care about right now.
 static const char keymap[128] = {
@@ -142,7 +144,9 @@ static void keyboard_irq(regs_t* r) {
     // Special keys
     if (sc == SC_ENTER) {
         terminal_putchar('\n');
-        shell_on_line(linebuf);
+        if (shell_enabled) {
+            shell_on_line(linebuf);
+        }
         line_reset();
         return;
     }
@@ -169,4 +173,8 @@ void keyboard_init(void) {
     // vector 33 after PIC remap(0x20,0x28)
     // Doesnt matter since it is automapped in irq
     irq_install_handler(1, keyboard_irq);
+}
+
+void keyboard_enable_shell(bool on) {
+    shell_enabled = on;
 }
