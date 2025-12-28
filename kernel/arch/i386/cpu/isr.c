@@ -4,6 +4,8 @@
 
 // use your kernel printf
 extern int printf(const char*, ...);
+// Page fault handler
+void page_fault_handler(regs_t* r);
 
 static const char* exc_names[32] = {
     "Divide-by-zero","Debug","NMI","Breakpoint","Overflow","Bound Range",
@@ -16,6 +18,10 @@ static const char* exc_names[32] = {
 };
 
 void isr_handler(regs_t* r) {
+    if (r->int_no == 14) {
+        page_fault_handler(r);
+    }
+
     if (r->int_no < 32) {
         printf("\n\n[EXCEPTION %u] %s  err=%u\n", r->int_no, exc_names[r->int_no], r->err_code);
         printf("EIP=%x CS=%x EFLAGS=%x\n", r->eip, r->cs, r->eflags);

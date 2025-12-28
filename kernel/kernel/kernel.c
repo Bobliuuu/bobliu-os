@@ -8,6 +8,9 @@
 #include <arch/i386/ssp.h>
 #include <arch/i386/pmm.h>
 #include <arch/i386/multiboot_1.h>
+#include <kernel/heap.h>
+#include <arch/i386/multiboot_modules.h>
+#include <kernel/initrd.h>
 
 void interrupts_init(void);
 // void ssp_test_run(void);
@@ -48,8 +51,24 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 	uintptr_t b = pmm_alloc_frame();
 	printf("alloc a=%x b=%x\n", (uint32_t)a, (uint32_t)b);
 
+	paging_init_identity();
+	// Test page fault -> core dump
+	/*
+	volatile uint32_t* bad = (uint32_t*)0xDEADBEEF;
+	(void)*bad;
+	*/
+
+	heap_init(0x00800000u, 0x00400000u);
+
 	if (a) pmm_free_frame(a);
 	if (b) pmm_free_frame(b);
+
+	mb1_module_view_t mod;
+	if (mb1_find_module_by_string("initrd", &mod) == 0) {
+		initrd_init_from_module(mod.start, mod.end);
+	} else {
+		printf("no initrd module\n");
+	}
 
     bool enable_shell = true;
     if (cmdline_has(boot_cmdline, "noshell")) {
