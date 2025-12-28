@@ -1,0 +1,23 @@
+build-gcc/
+build-binutils/
+gcc-*/
+binutils-*/
+
+# Build artifacts
+*.o
+*.a
+*.d
+*.elf
+*.bin
+*.iso
+*.kernel
+
+# OSDev dirs
+sysroot/
+isodir/
+*.iso
+
+# Editor/OS
+.DS_Store
+.vscode/
+.idea/

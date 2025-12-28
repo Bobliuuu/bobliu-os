@@ -1,0 +1,54 @@
+// isr.c
+#include <arch/i386/isr.h>
+#include <arch/i386/portio.h>
+
+// use your kernel printf
+extern int printf(const char*, ...);
+
+static const char* exc_names[32] = {
+    "Divide-by-zero","Debug","NMI","Breakpoint","Overflow","Bound Range",
+    "Invalid Opcode","Device Not Available","Double Fault","Coprocessor Segment",
+    "Invalid TSS","Segment Not Present","Stack-Segment Fault","General Protection",
+    "Page Fault","Reserved","x87 FP Exception","Alignment Check","Machine Check",
+    "SIMD FP Exception","Virtualization","Control Protection","Reserved","Reserved",
+    "Reserved","Reserved","Reserved","Reserved","Hypervisor Injection","VMM Communication",
+    "Security","Reserved"
+};
+
+void isr_handler(regs_t* r) {
+    if (r->int_no < 32) {
+        printf("\n\n[EXCEPTION %u] %s  err=%u\n", r->int_no, exc_names[r->int_no], r->err_code);
+        printf("EIP=%x CS=%x EFLAGS=%x\n", r->eip, r->cs, r->eflags);
+        printf("EAX=%x EBX=%x ECX=%x EDX=%x\n", r->eax, r->ebx, r->ecx, r->edx);
+        printf("ESI=%x EDI=%x EBP=%x ESP=%x\n", r->esi, r->edi, r->ebp, r->esp);
+        // Halt forever so you can read it
+        for (;;) { __asm__ volatile ("cli; hlt"); }
+    }
+}
+
+static inline void pic_send_eoi(unsigned int int_no) {
+    // IRQs are mapped to 0x20..0x2F
+    if (int_no >= 0x28) outb(0xA0, 0x20); // slave PIC
+    outb(0x20, 0x20);                     // master PIC
+}
+
+// Simple IRQ dispatch table
+typedef void (*irq_fn)(regs_t*);
+static irq_fn irq_routines[16] = {0};
+
+void irq_install_handler(int irq, irq_fn fn) { irq_routines[irq] = fn; }
+void irq_uninstall_handler(int irq) { irq_routines[irq] = 0; }
+
+void irq_handler(regs_t* r) {
+    int irq = (int)r->int_no - 32;
+
+    if (irq >= 0 && irq < 16 && irq_routines[irq]) {
+        irq_routines[irq](r);
+    }
+
+    // Send EOI
+    //if (r->int_no >= 40) outb(0xA0, 0x20);
+    //outb(0x20, 0x20);
+
+    pic_send_eoi(r->int_no);
+}
