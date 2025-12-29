@@ -108,6 +108,9 @@ void idt_init(void) {
     for (int i = 0; i < 16; i++) {
         idt_set_gate((uint8_t)(32+i), (uint32_t)irqs[i], 0x08, 0x8E);
     }
+    extern void isr128(); // stub for int 0x80
+    idt_set_gate(0x80, (uint32_t)isr128, 0x08, 0xEE);
+    // 0xEE = present + DPL=3 + 32-bit interrupt gate
 
     idt_load((uint32_t)&idtp);
 }

@@ -5,13 +5,6 @@
 extern void vga_print(const char* s);
 extern void vga_print_hex(uint32_t x);
 
-#define PAGE_SIZE 4096u
-#define PDE_COUNT 1024u
-#define PTE_COUNT 1024u
-
-#define P_PRESENT 0x001u
-#define P_RW      0x002u
-
 static uint32_t* g_pd = 0;
 
 static inline void write_cr3(uint32_t phys) {
@@ -68,4 +61,77 @@ void paging_init_identity(void) {
     write_cr0(cr0);
 
     vga_print("paging: enabled\n");
+}
+
+static inline uint32_t pde_index(uint32_t v) { return (v >> 22) & 0x3FF; }
+static inline uint32_t pte_index(uint32_t v) { return (v >> 12) & 0x3FF; }
+
+static uint32_t* get_or_alloc_pt(uint32_t vaddr, uint32_t flags, int make) {
+    uint32_t pdi = pde_index(vaddr);
+    uint32_t pde = g_pd[pdi];
+
+    if (pde & P_PRESENT) {
+        // Upgrade existing PDE if mapping user pages
+        if ((flags & P_USER) && !(pde & P_USER)) {
+            g_pd[pdi] |= P_USER;
+        }
+        return (uint32_t*)(pde & 0xFFFFF000u);
+    }
+
+    if (!make) return 0;
+
+    uint32_t* pt = alloc_table();
+
+    uint32_t pde_flags = P_PRESENT | P_RW;
+    if (flags & P_USER) pde_flags |= P_USER;
+
+    g_pd[pdi] = ((uint32_t)pt & 0xFFFFF000u) | pde_flags;
+    return pt;
+}
+
+int paging_map(uint32_t vaddr, uint32_t paddr, uint32_t flags) {
+    vaddr &= 0xFFFFF000u;
+    paddr &= 0xFFFFF000u;
+
+    uint32_t* pt = get_or_alloc_pt(vaddr, flags, 1);
+    if (!pt) return -1;
+
+    uint32_t pti = pte_index(vaddr);
+    pt[pti] = paddr | (flags | P_PRESENT);
+
+    // flush this page (or reload cr3)
+    asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    return 0;
+}
+
+int paging_unmap(uint32_t vaddr) {
+    vaddr &= 0xFFFFF000u;
+    uint32_t* pt = get_or_alloc_pt(vaddr, 0, 0);
+    if (!pt) return -1;
+
+    uint32_t pti = pte_index(vaddr);
+    pt[pti] = 0;
+    asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    return 0;
+}
+
+uint32_t paging_translate(uint32_t vaddr) {
+    uint32_t pdi = pde_index(vaddr);
+    uint32_t pti = pte_index(vaddr);
+
+    uint32_t pde = g_pd[pdi];
+    if (!(pde & P_PRESENT)) return 0;
+
+    uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
+    uint32_t pte = pt[pti];
+    if (!(pte & P_PRESENT)) return 0;
+
+    return (pte & 0xFFFFF000u) | (vaddr & 0xFFF);
+}
+
+int paging_alloc_map(uint32_t vaddr, uint32_t flags) {
+    uint32_t p = (uint32_t)pmm_alloc_frame();
+    if (!p) return -1;
+    if (paging_map(vaddr, p, flags) < 0) return -1;
+    return 0;
 }

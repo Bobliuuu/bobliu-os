@@ -6,6 +6,8 @@
 extern int printf(const char*, ...);
 // Page fault handler
 void page_fault_handler(regs_t* r);
+// Syscall handler for userspace
+extern void syscall_handle(regs_t* r);
 
 static const char* exc_names[32] = {
     "Divide-by-zero","Debug","NMI","Breakpoint","Overflow","Bound Range",
@@ -20,6 +22,14 @@ static const char* exc_names[32] = {
 void isr_handler(regs_t* r) {
     if (r->int_no == 14) {
         page_fault_handler(r);
+    }
+    if (r->int_no == 128) {
+        isr128_handler(r);
+        return;
+    }
+    if (r->int_no == 0x80) {
+        syscall_handle(r);
+        return;
     }
 
     if (r->int_no < 32) {
@@ -57,4 +67,22 @@ void irq_handler(regs_t* r) {
     //outb(0x20, 0x20);
 
     pic_send_eoi(r->int_no);
+}
+
+void isr128_handler(regs_t* r) {
+    // convention: eax = syscall number, ebx/ecx/edx = args
+    // for testing: syscall 1 => print a char in BL
+    if (r->eax == 1) {
+        putchar((char)(r->ebx & 0xFF));
+        return;
+    }
+
+    // syscall 2 => print string at user pointer EBX (unsafe early!)
+    // (Do NOT keep this long-term; you need copyin + validation.)
+    if (r->eax == 2) {
+        const char* s = (const char*)r->ebx;
+        // extremely unsafe: assumes identity map + readable pointer
+        printf("%s", s);
+        return;
+    }
 }

@@ -39,7 +39,7 @@ LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
 #$(ARCHDIR)/test/ctor_test.o $(ARCHDIR)/test/ssp_test.o
 # For shell
 #$(ARCHDIR)/shell/shell.o
-KERNEL_C_OBJS := kernel/kernel.o $(ARCHDIR)/cpu/call.o $(ARCHDIR)/cpu/early.o $(ARCHDIR)/shell/shell.o
+KERNEL_C_OBJS := kernel/kernel.o $(ARCHDIR)/cpu/call.o $(ARCHDIR)/cpu/early.o $(ARCHDIR)/test/ring_test.o $(ARCHDIR)/shell/shell.o
 KERNEL_OBJS := $(strip $(KERNEL_ARCH_OBJS) $(KERNEL_C_OBJS))
 
 OBJS=\
