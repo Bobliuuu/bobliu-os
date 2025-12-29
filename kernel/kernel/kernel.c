@@ -11,6 +11,9 @@
 #include <kernel/heap.h>
 #include <arch/i386/multiboot_modules.h>
 #include <kernel/initrd.h>
+#include <kernel/vfs.h>
+#include <kernel/initrd_vfs.h>
+#include <arch/i386/paging.h>
 
 void interrupts_init(void);
 // void ssp_test_run(void);
@@ -63,13 +66,17 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 	if (a) pmm_free_frame(a);
 	if (b) pmm_free_frame(b);
 
+	multiboot_info_t* mbi = multiboot1_info();
+	multiboot1_dump_modules(mbi);
+
+	uintptr_t initrd_start=0, initrd_end=0;
 	mb1_module_view_t mod;
 	if (mb1_find_module_by_string("initrd", &mod) == 0) {
-		initrd_init_from_module(mod.start, mod.end);
+		initrd_vfs_init(mod.start, mod.end);
+		vfs_init(initrd_vfs_root());
 	} else {
 		printf("no initrd module\n");
 	}
-
     bool enable_shell = true;
     if (cmdline_has(boot_cmdline, "noshell")) {
 		enable_shell = false;
