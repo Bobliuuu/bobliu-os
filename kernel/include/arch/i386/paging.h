@@ -7,6 +7,7 @@
 #define P_RW      0x002u
 #define P_USER    0x004u
 
+#define PAGE_SIZE 0x1000u
 #define PDE_COUNT 1024u
 #define PTE_COUNT 1024u
 

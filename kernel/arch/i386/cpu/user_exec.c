@@ -11,8 +11,9 @@
 
 // pick a simple fixed stack
 #define USTACK_TOP    0x00800000u
-#define USTACK_PAGES  4
-#define PAGE_SIZE     0x1000u
+#define USTACK_PAGES  (USTACK_TOP - 0x1000u)
+#define MAX_ELF       (512u * 1024u)
+//#define PAGE_SIZE     0x1000u
 
 static uint32_t align_down(uint32_t x) { return x & 0xFFFFF000u; }
 static uint32_t align_up(uint32_t x)   { return (x + 0xFFFu) & 0xFFFFF000u; }
