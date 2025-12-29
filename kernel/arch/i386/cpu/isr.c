@@ -1,6 +1,12 @@
 // isr.c
 #include <arch/i386/isr.h>
 #include <arch/i386/portio.h>
+#include <arch/i386/user_bounce.h>
+#include <stdio.h>
+
+extern volatile uint32_t g_exec_kesp;
+extern volatile uint32_t g_exec_resume_eip;
+extern volatile uint32_t g_user_exited;
 
 // use your kernel printf
 extern int printf(const char*, ...);
@@ -18,6 +24,21 @@ static const char* exc_names[32] = {
     "Reserved","Reserved","Reserved","Reserved","Hypervisor Injection","VMM Communication",
     "Security","Reserved"
 };
+
+/*
+static __attribute__((noreturn)) 
+void exec_bounce_to_kernel(void) {
+    asm volatile(
+        "cli\n"
+        "mov %0, %%esp\n"
+        "jmp *%1\n"
+        :
+        : "r"(g_exec_kesp), "r"(g_exec_resume_eip)
+        : "memory"
+    );
+    __builtin_unreachable();
+}
+*/
 
 void isr_handler(regs_t* r) {
     if (r->int_no == 14) {
@@ -77,12 +98,15 @@ void isr128_handler(regs_t* r) {
         return;
     }
 
-    // syscall 2 => print string at user pointer EBX (unsafe early!)
-    // (Do NOT keep this long-term; you need copyin + validation.)
-    if (r->eax == 2) {
-        const char* s = (const char*)r->ebx;
-        // extremely unsafe: assumes identity map + readable pointer
-        printf("%s", s);
+    // syscall 2 => print string at user pointer EBX (unsafe!!!) -> need copy + validation
+    if (r->eax == 2) { // exit(code)
+        printf("\n[proc exited]\n");
+        printf("exit: useresp=%x saved_kesp=%x resume=%x\n",
+        (uint32_t)r->useresp, (uint32_t)g_exec_kesp, (uint32_t)g_exec_resume_eip);
+        //exec_bounce_to_kernel();
+        g_user_exited = 1;
         return;
     }
+
+    return;
 }

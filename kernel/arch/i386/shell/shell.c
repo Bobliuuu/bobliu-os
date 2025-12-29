@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include <kernel/vfs.h>
-
 #include <kernel/tty.h>
+#include <kernel/user_exec.h>
 
 // If you have timer ticks exported:
 extern uint32_t timer_ticks(void);
@@ -38,6 +38,7 @@ static int cmd_cd(int argc, char** argv);
 static int cmd_ls(int argc, char** argv);
 static int cmd_cat(int argc, char** argv);
 static int cmd_hexdump(int argc, char** argv);
+static int cmd_exec(int argc, char** argv);
 
 static const cmd_t cmds[] = {
     { "help",    cmd_help },
@@ -52,6 +53,7 @@ static const cmd_t cmds[] = {
     { "ls",      cmd_ls },
     { "cat",     cmd_cat },
     { "hexdump", cmd_hexdump },
+    { "exec", cmd_exec },
     { "panic",   cmd_panic },
 };
 static const int cmd_count = (int)(sizeof(cmds)/sizeof(cmds[0]));
@@ -166,6 +168,10 @@ static void shell_resolve_path(char* out, size_t out_sz, const char* in) {
 static void shell_prompt(void) {
     terminal_clear_eol();
     printf("bobliu:%s> ", g_cwd);
+}
+
+void shell_prompt_public(void) {
+    shell_prompt();
 }
 
 // very small tokenizer: splits by spaces into argv
@@ -330,6 +336,19 @@ static int cmd_hexdump(int argc, char** argv) {
 
     vfs_close(fd);
     return 0;
+}
+
+static int cmd_exec(int argc, char** argv) {
+    if (argc < 2) { printf("usage: exec <path>\n"); return -1; }
+
+    char path[256];
+    shell_canon_path(path, g_cwd, argv[1]);
+
+    if (user_exec(path) < 0) {
+        printf("exec: failed: %s\n", path);
+        return -1;
+    }
+    return 0; // never reached on success
 }
 
 void shell_init(void) {

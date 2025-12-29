@@ -1,6 +1,8 @@
 // isr_stubs.s
 .extern isr_handler
 .extern irq_handler
+.extern g_user_exited
+.extern syscall_exit_bounce
 
 // Pushes a dummy error code for exceptions that don't have one.
 .macro ISR_NOERR n
@@ -54,6 +56,11 @@ isr_common:
 
     popa
     add $8, %esp      // int_no + err_code
+    cmpl $0, g_user_exited
+    je  1f
+    movl $0, g_user_exited
+    jmp exec_bounce_to_kernel
+1:
     sti
     iret
 

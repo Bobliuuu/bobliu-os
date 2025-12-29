@@ -2,14 +2,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define PAGE_SIZE 4096u
-
 // flags for page table entries
 #define P_PRESENT 0x001u
 #define P_RW      0x002u
 #define P_USER    0x004u
 
-#define PAGE_SIZE 4096u
 #define PDE_COUNT 1024u
 #define PTE_COUNT 1024u
 
