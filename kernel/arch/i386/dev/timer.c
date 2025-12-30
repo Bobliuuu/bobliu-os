@@ -17,6 +17,7 @@ static void timer_cb(regs_t* r) {
     ticks++;
     // uncomment if you want a tick
     //if ((ticks % 100) == 0) printf("[tick %llu]\n", ticks);
+    if ((ticks % 100) == 0) putchar('.');
 }
 
 void timer_init(uint32_t hz) {
@@ -28,4 +29,10 @@ void timer_init(uint32_t hz) {
     outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 
     irq_install_handler(0, timer_cb); // IRQ0
+}
+
+static void timer_irq(regs_t* r) {
+    (void)r;
+    ticks++;
+    if ((ticks % 100) == 0) putchar('.');   // prints dot periodically
 }

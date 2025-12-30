@@ -30,7 +30,8 @@ ARCHDIR=arch/$(HOSTARCH)
 include $(ARCHDIR)/make.config
 
 CFLAGS:=$(CFLAGS) $(KERNEL_ARCH_CFLAGS)
-CFLAGS += -fstack-protector-strong -fno-omit-frame-pointer -Wstack-protector
+#CFLAGS += -fstack-protector-strong -fno-omit-frame-pointer -Wstack-protector
+CFLAGS += -fno-stack-protector
 CPPFLAGS:=$(CPPFLAGS) $(KERNEL_ARCH_CPPFLAGS)
 LDFLAGS:=$(LDFLAGS) $(KERNEL_ARCH_LDFLAGS)
 LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
@@ -39,7 +40,7 @@ LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
 #$(ARCHDIR)/test/ctor_test.o $(ARCHDIR)/test/ssp_test.o
 # For shell
 #$(ARCHDIR)/shell/shell.o
-KERNEL_C_OBJS := kernel/kernel.o $(ARCHDIR)/cpu/call.o $(ARCHDIR)/cpu/early.o $(ARCHDIR)/test/ring_test.o $(ARCHDIR)/shell/shell.o
+KERNEL_C_OBJS := kernel/kernel.o $(ARCHDIR)/cpu/call.o $(ARCHDIR)/cpu/early.o $(ARCHDIR)/shell/shell.o
 KERNEL_OBJS := $(strip $(KERNEL_ARCH_OBJS) $(KERNEL_C_OBJS))
 
 OBJS=\

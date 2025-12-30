@@ -39,14 +39,12 @@ void paging_init_identity(void) {
     g_pd = alloc_table();
 
     // Identity-map 0..16MB => 4 page tables (PDE 0..3)
-    for (uint32_t pde = 0; pde < 4; pde++) {
+    for (uint32_t pde = 0; pde < KERNEL_PDE_END; pde++) {
         uint32_t* pt = alloc_table();
-
         for (uint32_t pte = 0; pte < PTE_COUNT; pte++) {
             uint32_t addr = (pde * 0x400000u) + (pte * PAGE_SIZE);
             pt[pte] = (addr & 0xFFFFF000u) | P_PRESENT | P_RW;
         }
-
         g_pd[pde] = ((uint32_t)pt & 0xFFFFF000u) | P_PRESENT | P_RW;
     }
 
@@ -66,22 +64,41 @@ void paging_init_identity(void) {
 static inline uint32_t pde_index(uint32_t v) { return (v >> 22) & 0x3FF; }
 static inline uint32_t pte_index(uint32_t v) { return (v >> 12) & 0x3FF; }
 
-static uint32_t* get_or_alloc_pt(uint32_t vaddr, int make, uint32_t pde_flags) {
+// Upgrade an existing PDE to be at least as permissive as needed for this mapping.
+// For ring3 access, BOTH PDE and PTE must have P_USER; for writes BOTH must have P_RW.
+static inline void pde_upgrade(uint32_t* pd, uint32_t pdi, uint32_t need_flags) {
+    uint32_t want = 0;
+    if (need_flags & P_USER) want |= P_USER;
+    if (need_flags & P_RW)   want |= P_RW;
+
+    if (want) {
+        uint32_t pde = pd[pdi];
+        if ((pde & want) != want) {
+            pd[pdi] = pde | want;
+        }
+    }
+}
+
+// Kernel current directory path (uses global g_pd)
+static uint32_t* get_or_alloc_pt(uint32_t vaddr, int make, uint32_t need_flags) {
     uint32_t pdi = pde_index(vaddr);
     uint32_t pde = g_pd[pdi];
 
     if (pde & P_PRESENT) {
-        // If caller needs user access, upgrade PDE to include P_USER
-        if (pde_flags & P_USER) {
-            g_pd[pdi] |= P_USER;
-        }
-        return (uint32_t*)(pde & 0xFFFFF000u); // identity-mapped
+        // If caller needs user/rw, PDE must allow it too
+        pde_upgrade(g_pd, pdi, need_flags);
+        return (uint32_t*)(pde & 0xFFFFF000u); // identity-mapped PT
     }
 
     if (!make) return 0;
 
-    uint32_t* pt = alloc_table();
-    g_pd[pdi] = ((uint32_t)pt & 0xFFFFF000u) | P_PRESENT | P_RW | (pde_flags & P_USER);
+    uint32_t* pt = alloc_table(); // identity-mapped, zeroed
+
+    uint32_t pde_flags = P_PRESENT;
+    if (need_flags & P_RW)   pde_flags |= P_RW;
+    if (need_flags & P_USER) pde_flags |= P_USER;
+
+    g_pd[pdi] = ((uint32_t)pt & 0xFFFFF000u) | pde_flags;
     return pt;
 }
 
@@ -196,59 +213,18 @@ static void memset32(void* dst, uint8_t v, uint32_t n) {
 }
 
 page_directory_t paging_clone_directory(page_directory_t src) {
-    // allocate new PD
-    uint32_t* new_pd = alloc_table();          // 4KB, zeroed, identity-mapped
+    uint32_t* new_pd = alloc_table();
     page_directory_t out = { .pd_phys = new_pd, .pd_virt = new_pd };
 
-    // copy PDEs
-    for (uint32_t pdi = 0; pdi < 1024; pdi++) {
-        uint32_t pde = src.pd_virt[pdi];
-        if (!(pde & P_PRESENT)) {
-            out.pd_virt[pdi] = 0;
-            continue;
-        }
-
-        // share kernel identity region (your paging_init_identity mapped PDE 0..3)
-        if (pdi < 4) {
-            out.pd_virt[pdi] = pde;
-            continue;
-        }
-
-        // deep copy user PT
-        uint32_t* src_pt = (uint32_t*)(pde & 0xFFFFF000u);
-        uint32_t* new_pt = alloc_table();
-
-        // carry PDE flags but update PT phys
-        uint32_t pde_flags = pde & 0xFFF;
-        out.pd_virt[pdi] = ((uint32_t)new_pt & 0xFFFFF000u) | pde_flags;
-
-        for (uint32_t pti = 0; pti < 1024; pti++) {
-            uint32_t pte = src_pt[pti];
-            if (!(pte & P_PRESENT)) {
-                new_pt[pti] = 0;
-                continue;
-            }
-
-            uint32_t src_frame = pte & 0xFFFFF000u;
-            uint32_t pte_flags = pte & 0xFFF;
-
-            // allocate new frame
-            uint32_t new_frame = (uint32_t)pmm_alloc_frame();
-            if (!new_frame) {
-                // OOM: in a real kernel you'd free what you allocated.
-                // for now: panic
-                extern void panic(const char*);
-                panic("paging_clone_directory: OOM");
-            }
-
-            // copy contents: identity-map frames in your kernel (0..16MB is mapped)
-            // IMPORTANT: this requires src_frame to be identity-mapped
-            // For now it is, because you're allocating low memory frames.
-            memcpy32((void*)new_frame, (void*)src_frame, 4096);
-
-            new_pt[pti] = new_frame | pte_flags;
-        }
+    for (uint32_t pdi = 0; pdi < KERNEL_PDE_END; pdi++) {
+        out.pd_virt[pdi] = src.pd_virt[pdi];
     }
-
+    for (uint32_t pdi = KERNEL_PDE_END; pdi < 1024; pdi++) {
+        out.pd_virt[pdi] = 0;
+    }
     return out;
+}
+
+uint32_t* paging_current_pd_virt(void) {
+    return g_pd;   // g_pd stays static
 }

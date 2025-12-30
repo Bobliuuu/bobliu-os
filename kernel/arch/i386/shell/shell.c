@@ -5,6 +5,13 @@
 #include <kernel/vfs.h>
 #include <kernel/tty.h>
 #include <kernel/user_exec.h>
+#include <arch/i386/keyboard.h>
+#include <arch/i386/user_bouncing.h>
+#include <arch/i386/isr.h>
+#include <arch/i386/portio.h>
+#include <arch/i386/paging.h>
+
+extern volatile uint32_t g_exec_kcr3;
 
 // If you have timer ticks exported:
 extern uint32_t timer_ticks(void);
@@ -15,6 +22,17 @@ void initrd_ls(void);
 int  initrd_cat(const char* path);
 // Optional: to debug pmm pages
 // extern void pmm_stats(void);
+extern void keyboard_enable_shell(bool enable);
+extern void keyboard_irq(regs_t* r);
+
+extern void irq_install_handler(int irq, void (*fn)(regs_t*));
+static void irq1_scream(regs_t* r) { (void)r; putchar('K'); }
+
+static inline uint32_t read_cr3(void) {
+    uint32_t val;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(val));
+    return val;
+}
 
 #define SHELL_MAX_PATH 256
 static char g_cwd[SHELL_MAX_PATH] = "/";
@@ -166,7 +184,7 @@ static void shell_resolve_path(char* out, size_t out_sz, const char* in) {
 }
 
 static void shell_prompt(void) {
-    terminal_clear_eol();
+    //terminal_clear_eol();
     printf("bobliu:%s> ", g_cwd);
 }
 
@@ -241,6 +259,7 @@ static int cmd_echo(int argc, char** argv) {
         if (i + 1 < argc) printf(" ");
     }
     printf("\n");
+    return 0;
 }
 
 static int cmd_pwd(int argc, char** argv) {
@@ -348,6 +367,10 @@ static int cmd_exec(int argc, char** argv) {
         printf("exec: failed: %s\n", path);
         return -1;
     }
+    keyboard_enable_shell(true);
+    printf("\n");
+    printf("FINISHED\n");
+    shell_prompt_public();
     return 0; // never reached on success
 }
 
@@ -394,3 +417,22 @@ void shell_on_line(const char* line_in) {
     shell_prompt();
 }
 
+__attribute__((noreturn))
+void exec_return_to_shell(void) {
+    printf("cr3=%x (saved kcr3=%x)\n", read_cr3(), g_exec_kcr3);
+    ps2_enable_irq1_only();
+    pic_unmask_irq1();
+    keyboard_enable_shell(true);
+    printf("\n");
+    shell_prompt_public();
+
+    irq_install_handler(1, irq1_scream);
+    __asm__ volatile("sti");          // <<< ADD THIS
+    for (;;) {
+        //if (inb(0x64) & 1) {      // output buffer full
+            //uint8_t sc = inb(0x60);
+            //printf("{%x}", sc);
+        //}
+        __asm__ volatile("hlt");
+    }
+}

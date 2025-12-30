@@ -3,6 +3,13 @@
 #include <arch/i386/paging.h>
 #include <kernel/elf.h>
 
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 0x1000u
+#endif
+
+#define USER_STACK_TOP      0x02000000u   // 32MB (outside your 0..16MB identity map)
+#define USER_STACK_PAGES    4
+
 static uint32_t align_down(uint32_t x) { return x & 0xFFFFF000u; }
 static uint32_t align_up(uint32_t x)   { return (x + 0xFFFu) & 0xFFFFF000u; }
 
@@ -92,16 +99,18 @@ int elf_load_from_vfs(const char* path, page_directory_t dir, user_image_t* out)
         for (uint32_t b = P[i].p_filesz; b < P[i].p_memsz; b++) dst[b] = 0;
     }
 
-    // Map user stack (1 page for now)
-    uint32_t USTACK_TOP  = 0x00800000u;
-    uint32_t USTACK_PAGE = USTACK_TOP - 0x1000u;
-    if (paging_alloc_map_in(dir, USTACK_PAGE, P_PRESENT | P_RW | P_USER) < 0) {
-        kfree(img);
-        return -1;
+    // Map user stack (wrong)
+    // map N-page user stack (user RW)
+    for (int i = 1; i <= USER_STACK_PAGES; i++) {
+        uint32_t va = USER_STACK_TOP - (uint32_t)i * PAGE_SIZE;
+        if (paging_alloc_map_in(dir, va, P_PRESENT | P_RW | P_USER) < 0) {
+            kfree(img);
+            return -1;
+        }
     }
 
     out->entry = E->e_entry;
-    out->user_stack_top = USTACK_TOP;
+    out->user_stack_top = USER_STACK_TOP; 
 
     kfree(img);
     return 0;

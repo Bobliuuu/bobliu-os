@@ -2,7 +2,9 @@
 .extern isr_handler
 .extern irq_handler
 .extern g_user_exited
-.extern syscall_exit_bounce
+.extern exec_bounce_to_kernel
+.extern g_exec_kesp
+.extern g_exec_resume_eip
 
 // Pushes a dummy error code for exceptions that don't have one.
 .macro ISR_NOERR n
@@ -56,10 +58,22 @@ isr_common:
 
     popa
     add $8, %esp      // int_no + err_code
+
+    // NEW: if user requested exit, bounce now (AFTER unwinding)
     cmpl $0, g_user_exited
     je  1f
+
     movl $0, g_user_exited
-    jmp exec_bounce_to_kernel
+
+    // if you saved kernel cr3, restore it here
+    // mov g_exec_kcr3, %eax
+    // mov %eax, %cr3
+
+    mov g_exec_kesp, %esp
+
+    sti                    // CRITICAL: re-enable IRQs (keyboard)
+    jmp *g_exec_resume_eip  // resumes at exec_resume_after_user
+
 1:
     sti
     iret

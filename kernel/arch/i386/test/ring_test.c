@@ -38,6 +38,7 @@ static const uint8_t user_prog[] = {
 #define USER_STACK_TOP 0x00800000u   // stack grows down
 #define PAGE_SIZE      0x1000u
 
+/*
 // A single exported helper to enter ring3.
 // Keep this in THIS file only, and call it from your test function.
 static void enter_user(uint32_t entry, uint32_t user_stack_top) {
@@ -68,6 +69,7 @@ static void enter_user(uint32_t entry, uint32_t user_stack_top) {
 
     __builtin_unreachable();
 }
+*/
 
 // Call this from kernel init once paging + GDT/TSS + IDT are ready.
 // Requirements BEFORE calling:
@@ -103,6 +105,10 @@ void test_ring3_int80(void) {
     vga_print_hex(code_va);
     vga_print("\n");
 
+    uint32_t *sp;
+    asm volatile("mov %%esp, %0" : "=r"(sp));
+    printf("\n\n\ncallframe: ret=%x arg1=%x arg2=%x\n", sp[0], sp[1], sp[2]);
+    printf("stack range: %x .. %x\n", USTACK_TOP - USER_STACK_PAGES*0x1000, USTACK_TOP);
     // Jump to ring3, stack top at USER_STACK_TOP
     enter_user(code_va, USER_STACK_TOP);
 

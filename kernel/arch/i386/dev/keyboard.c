@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-
+#include <stdio.h>
 #include <arch/i386/portio.h>
 #include <arch/i386/isr.h>     // for regs_t and handler typedef (whatever yours is)
 #include <kernel/tty.h>        // terminal_putchar / terminal_write / etc (from your meaty skeleton)
@@ -106,7 +106,8 @@ static inline char apply_caps_shift(char c, bool shift, bool caps) {
     return c;
 }
 
-static void keyboard_irq(regs_t* r) {
+void keyboard_irq(regs_t* r) {
+    //terminal_putchar('.');
     (void)r;
 
     // Read scancode
@@ -172,9 +173,54 @@ static void keyboard_irq(regs_t* r) {
 void keyboard_init(void) {
     // vector 33 after PIC remap(0x20,0x28)
     // Doesnt matter since it is automapped in irq
+    // ps2_keyboard_enable();      // <<< ADD THIS
     irq_install_handler(1, keyboard_irq);
+    outb(0x21, inb(0x21) & ~(1<<1));
 }
 
 void keyboard_enable_shell(bool on) {
     shell_enabled = on;
+    printf("done\n");
+    if (on) line_reset();
+}
+
+static inline void ps2_wait_input_clear(void) {
+    while (inb(0x64) & 2) {}
+}
+static inline void ps2_wait_output_full(void) {
+    while ((inb(0x64) & 1) == 0) {}
+}
+
+static inline void ps2_cmd(uint8_t cmd) {
+    ps2_wait_input_clear();
+    outb(0x64, cmd);
+}
+static inline uint8_t ps2_read_data(void) {
+    ps2_wait_output_full();
+    return inb(0x60);
+}
+static inline void ps2_write_data(uint8_t data) {
+    ps2_wait_input_clear();
+    outb(0x60, data);
+}
+
+static void ps2_flush(void) {
+    while (inb(0x64) & 1) (void)inb(0x60);
+}
+
+void ps2_enable_irq1_only(void) {
+    ps2_flush();
+
+    ps2_cmd(0xAE);        // enable first port
+
+    ps2_cmd(0x20);        // read config byte
+    uint8_t cfg = ps2_read_data();
+
+    cfg |= 0x01;          // set bit0 = IRQ1 enable
+    // DO NOT change any other bits (especially bit6 translation)
+
+    ps2_cmd(0x60);        // write config byte
+    ps2_write_data(cfg);
+
+    ps2_flush();
 }
