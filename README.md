@@ -3,8 +3,9 @@
 A small, from-scratch 32-bit x86 (i686) operating system. It boots from GRUB, sets up its own
 descriptor tables, interrupts, paging and memory allocators, mounts a tar-based initrd behind a
 tiny VFS, and runs ELF binaries as preemptively scheduled ring 3 processes with private address
-spaces. Processes talk to the kernel through a seven-call syscall ABI on `int 0x80` (`fork`,
-`execve`, `waitpid`, `exit`, `read`, `write`, `getpid`), and the default boot drops you into a
+spaces. Processes talk to the kernel through a twelve-call syscall ABI on `int 0x80` (`fork`,
+`execve`, `waitpid`, `exit`, `read`, `write`, `getpid`, plus read-only file calls `open`, `close`,
+`lseek`, `stat`, `readdir`), and the default boot drops you into a
 small user-space shell that is itself an ELF program. A kernel shell is still there for poking
 at the machine.
 
@@ -13,9 +14,16 @@ Bobliu's kernel
 bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
 $ echo hi there
 hi there
-$ hello
-hello from userland!
-...
+$ ls /bin
+cat  (35340 bytes)
+echo  (31500 bytes)
+crash  (33100 bytes)
+sh  (41196 bytes)
+forktest  (37848 bytes)
+hello  (32904 bytes)
+ls  (35964 bytes)
+$ cat /hello.txt
+Hello, world!$ 
 ```
 
 It is a hobby kernel: single core, VGA text mode, PS/2 keyboard, at most 16 processes. It is
@@ -29,16 +37,18 @@ roadmap. The honest status of each phase is below.
 - **GDT** with ring 0 and ring 3 code/data segments, plus a **TSS** whose `esp0` is switched per process
 - **IDT, ISRs and IRQs**: CPU exceptions 0-31, remapped 8259 PIC (vectors 32-47), 100 Hz PIT timer, `int 0x80` as a user-callable gate
 - **Physical memory manager**: bitmap frame allocator seeded from the multiboot memory map
-- **Paging**: the first 256 MiB is identity-mapped and shared by every address space (PDEs 0..63); user space lives at `0x10000000..0x40000000` in per-process page tables
+- **Paging**: the first 256 MiB is identity-mapped and shared by every address space (PDEs 0..63); user space lives at `0x10000000..0x40000000` in per-process page tables; `CR0.WP` is set so read-only pages also bind the kernel
 - **Kernel heap**: first-fit free-list allocator with split and coalesce; `kfree` works and the heap's frames are reserved in the PMM
-- **Processes**: a 16-entry process table, a kmalloc'd kernel stack and page directory per process, `swtch()` context switching, a round-robin scheduler, and timer preemption of ring 3 code every 5 ticks (50 ms)
-- **fork / exec / waitpid / exit**: `fork` deep-copies the user pages (no copy-on-write), `execve` replaces the image and puts `argc`/`argv` on the new stack, exited processes become zombies until reaped, and a fault in ring 3 kills only that process
+- **Kernel stacks with guard pages**: each process's 16 KiB kernel stack lives in a dedicated region at `0xE0000000`, preceded by an unmapped guard page; overflow prints `KERNEL STACK OVERFLOW` and halts instead of corrupting the heap
+- **Processes**: a 16-entry process table, a guarded kernel stack and page directory per process, `swtch()` context switching, a round-robin scheduler, and timer preemption of ring 3 code every 5 ticks (50 ms)
+- **fork / exec / waitpid / exit**: `fork` is copy-on-write (frames are shared and write-protected, with a per-frame refcount in the PMM, and copied on the first write), `execve` replaces the image and puts `argc`/`argv` on the new stack, exited processes become zombies until reaped, and a fault in ring 3 kills only that process
 - **PS/2 keyboard** driver (US layout, shift and caps lock) feeding a line editor; finished lines go to the kernel shell, or to the console (stdin) buffer while a user program is in the foreground
-- **initrd**: a ustar archive loaded as a GRUB module, exposed through a small **VFS** (open/read/close/stat/ls)
+- **initrd**: a ustar archive loaded as a GRUB module, exposed through a small **VFS** (open/read/seek/close/stat/readdir)
 - **ELF32 loader** (`cpu/user_exec.c`) that validates the image, maps `PT_LOAD` segments plus an 8-page stack into a fresh address space, and copies through the identity map
-- **Syscalls**: `exit`, `fork`, `read`, `write`, `waitpid`, `execve`, `getpid`, numbered like Linux i386
-- **A small libc and toolchain slice**: `libc.a` (stdio `printf`/`puts`, string, `unistd`, `sys/wait.h`, `exit`/`abort`), `crt0.S`, a linker script and an `i686-bobliu-gcc` wrapper
-- **User programs** in `user/` (`sh`, `hello`, `echo`, `forktest`, `crash`) built into `initrd/bin`
+- **File descriptors**: each process has a 16-entry fd table (`PROC_MAXFD`); fds 0-2 are the console, fds 3+ map to VFS files, and they are closed on exit (not inherited by `fork`). Files are read-only
+- **Syscalls**: `exit`, `fork`, `read`, `write`, `open`, `close`, `waitpid`, `execve`, `getpid`, `lseek`, `readdir`, `stat`, numbered like Linux i386
+- **A small libc and toolchain slice**: `libc.a` (stdio `printf`/`puts`, string incl. `strcat`, `unistd` incl. `open`/`close`/`lseek`, `sys/stat.h` `stat`, `dirent.h` `readdir_at`, `sys/wait.h`, `exit`/`abort`), `crt0.S`, a linker script and an `i686-bobliu-gcc` wrapper
+- **User programs** in `user/` (`sh`, `hello`, `echo`, `cat`, `ls`, `forktest`, `crash`) built into `initrd/bin`
 - **Kernel shell** with filesystem navigation, memory inspection, `ps` and `exec`
 
 ## Status and roadmap
@@ -55,7 +65,7 @@ Mapped to the OSDev wiki phases. Status is based on what is in the tree, not on 
 | Memory management | Done, basic | Bitmap PMM, identity paging for the kernel, free-list heap with a working `kfree` |
 | Interrupts | Done | Exceptions, remapped PIC, PIT, `int 0x80`; EOI sent first |
 | Keyboard | Done | Scancode set 1, US layout, shift/caps, line buffer; no extended keys; lines routed to the shell or to stdin |
-| Filesystem | Done, read-only | tar initrd behind a VFS; no write support, no real disk driver |
+| Filesystem | Done, read-only | tar initrd behind a VFS, reachable from user space through file syscalls; no write support, no real disk driver |
 
 ### Phase II: user space
 
@@ -63,18 +73,18 @@ Mapped to the OSDev wiki phases. Status is based on what is in the tree, not on 
 |---|---|---|---|
 | User space (ring 3) | #1 | Done | GDT/TSS, `iret` into ring 3, per-process page tables at `0x10000000..0x40000000` |
 | Program loading | #2 | Done | ELF32 loader in `cpu/user_exec.c`: validates headers, copies via the identity map |
-| Syscall ABI | #3 | Done | `int 0x80`, Linux-style numbers; `exit`, `fork`, `read`, `write`, `waitpid`, `execve`, `getpid` |
+| Syscall ABI | #3 | Done | `int 0x80`, Linux-style numbers; `exit`, `fork`, `read`, `write`, `waitpid`, `execve`, `getpid` (file syscalls added in #8) |
 | OS-specific toolchain | #4 | Done, minimal | `crt0.S` (passes `argc`/`argv`), `user.ld`, gcc wrapper; reuses `i686-elf-gcc`, no `i686-bobliu` target |
-| libc | #5 | Done | `libc.a`: stdio (`printf`, `puts`), string (incl. `strchr`), `unistd`, `sys/wait.h`, `exit`/`abort`; no `malloc` yet |
-| fork / exec | #6 | Done | Process table, round-robin scheduler, `swtch`, `fork` (deep copy), `execve`, `waitpid`, zombies |
+| libc | #5 | Done | `libc.a`: stdio (`printf`, `puts`), string (incl. `strchr`, `strcat`), `unistd`, `sys/stat.h`, `dirent.h`, `sys/wait.h`, `exit`/`abort`; no `malloc` yet |
+| fork / exec | #6 | Done | Process table, round-robin scheduler, `swtch`, `fork` (copy-on-write since #9), `execve`, `waitpid`, zombies |
 | Userland shell | #7 | Done | `user/sh.c`: reads a line, `fork` + `execv` from `/bin`, `waitpid` |
 
-Open issues:
+| File syscalls | #8 | Done, read-only | Per-process fd table (16 entries); `open`, `close`, `lseek`, `stat`, `readdir`, and `read` on fds 3+; `user/cat.c` and `user/ls.c` |
+| Memory hardening | #9 | Done | Kernel-stack guard pages (region at `0xE0000000`) and copy-on-write `fork` (`P_COW` bit, per-frame refcounts, `CR0.WP`) |
 
-- **#8** file syscalls (`open`/`read`/`close`/`lseek`); `read` currently only works on fd 0
-- **#9** kernel-stack guard page and copy-on-write `fork`
+All GitHub issues (#1-#9) are done and there are no open issues.
 
-Further out: a per-process file descriptor table backed by the VFS, `malloc`/`brk`, a disk driver.
+Further out: file writes, `dup`/fd inheritance across `fork`, `malloc`/`brk`, a disk driver.
 
 ## Build and run
 
@@ -123,6 +133,8 @@ hand:
 | `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Built-in: `exit` |
 | `hello` | Prints a greeting, its pid and some libc output |
 | `echo` | Prints its arguments |
+| `cat` | `cat <file>...`: opens each file with `open`, copies it to stdout, prints `cat: <file>: cannot open` on failure |
+| `ls` | `ls [dir]` (default `/`): lists a directory with `readdir_at`, showing `name/` for directories and `name  (N bytes)` for files |
 | `forktest` | `fork` + `waitpid` exit status, `fork` + `execv`, then 40 short-lived children to check that memory comes back |
 | `crash` | Checks that bad syscall arguments are rejected, a failed `execv` returns, and a NULL write kills only this process |
 
@@ -173,9 +185,22 @@ $ forktest
 parent pid=4
 child  pid=5 (fork returned 0)
 parent: reaped 5, exit status 7
-...
+cow isolation: ok
+hello from userland!
+pid=6 strlen=6 hex=beef str=libc works
+parent: exec child done, status 0
+parent-writes-first: ok
 40 forks ok
-$ nope
+$ ls /bin
+cat  (35340 bytes)
+echo  (31500 bytes)
+crash  (33100 bytes)
+sh  (41196 bytes)
+forktest  (37848 bytes)
+hello  (32904 bytes)
+ls  (35964 bytes)
+$ cat /hello.txt
+Hello, world!$ nope
 sh: nope: not found
 [exit 127]
 $ exit
@@ -201,7 +226,7 @@ boot / kernel   kernel/arch/i386/   boot.S, swtch.S, isr_stubs.S, linker.ld,
                 kernel/kernel/      kernel.c (kernel_main)
                 kernel/include/     kernel headers; kernel/syscall.h is shared with user code
 libc            libc/               libk.a (kernel) and libc.a (user space), headers in libc/include
-user programs   user/               sh, hello, echo, forktest, crash (built into initrd/bin)
+user programs   user/               sh, hello, echo, cat, ls, forktest, crash (built into initrd/bin)
 toolchain       toolchain/          crt0.S, user.ld, i686-bobliu-gcc, build.sh
 initrd          initrd/             files packed into the tar module (initrd/bin is generated)
 scripts         iso.sh qemu.sh build.sh headers.sh config.sh clean.sh
@@ -211,13 +236,15 @@ docs            docs/architecture.md
 ## Documentation
 
 [docs/architecture.md](docs/architecture.md) covers the boot flow, memory layout, interrupt
-path, the process model (fork/exec/wait/exit and the scheduler), the syscall ABI, the VFS, the
+path, the process model (copy-on-write fork, exec/wait/exit and the scheduler), the syscall ABI, the VFS and per-process fd table, the
 build pipeline and the shells, with diagrams, plus a list of known limitations.
 
 ## Known limitations
 
-The short version (details in the architecture doc): `fork` copies every page (no
-copy-on-write), kernel stacks have no guard page, there are no file syscalls (`read` only
-serves stdin), at most 16 processes and 16 arguments of 128 bytes, `envp` is ignored, stdin is
-one global console buffer, blocking happens only in `waitpid` and `read`, and some dead code
-(for example `kernel/arch/i386/elf/elf.c`) is still compiled in.
+The short version (details in the architecture doc): files are read-only (`open` ignores its
+flags, there is no write to files), fds are not inherited by `fork` and there is no `dup`, user
+processes have no working directory (paths are absolute), at most 16 processes, 16 fds each, and
+16 arguments of 128 bytes, `envp` is ignored, stdin is one global console buffer, blocking
+happens only in `waitpid` and `read`, the pid 0 boot stack has no guard page, kernel-mode
+exceptions halt the machine, an out-of-memory during a copy-on-write fault kills the process,
+and some dead code (for example `kernel/arch/i386/elf/elf.c`) is still compiled in.

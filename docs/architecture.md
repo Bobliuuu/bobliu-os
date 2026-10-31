@@ -127,14 +127,19 @@ Managed by a bitmap allocator (`mm/pmm.c`), one bit per 4 KiB frame, first-fit s
            | kernel heap 0x800000..   |  reserved in the PMM by heap_init
            |            0xC00000      |
            +--------------------------+
-           | free frames (mmap type 1)|  page directories/tables, user pages
-           +--------------------------+
+           | free frames (mmap type 1)|  page directories/tables, user pages,
+           +--------------------------+  per-process kernel stacks
 ```
 
 The PMM starts with every frame marked used, frees all `type == 1` mmap regions, then re-marks
 the first 1 MiB, the kernel image, the bitmap and all modules as used. `heap_init` reserves its
 4 MiB range the same way, so the PMM never hands those frames out. Total frames come from the
 highest end address of available RAM in the memory map.
+
+Frames carry a reference count (`g_ref[]`, one byte per frame, for the first 512 MiB). A frame
+allocated normally has count 1; `pmm_ref_inc` adds a sharer (used by copy-on-write `fork`) and
+`pmm_ref` reads the count. `pmm_free_frame` only drops one reference while the count is above 1
+and releases the frame when the last reference goes. The count saturates at 255 sharers.
 
 ### Virtual address space
 
@@ -143,15 +148,16 @@ Paging is a 2-level 32-bit scheme with 4 KiB pages. The kernel identity-maps 0..
 the kernel directory, so they point at the **same page tables** everywhere and kernel memory is
 visible (supervisor-only) in every address space. User space is the range
 `USER_LO..USER_HI = 0x10000000..0x40000000` (PDEs 64..255), whose page tables are private to
-each process. Everything else is unmapped.
+each process. The kernel stacks live in one more region at `KSTACK_BASE = 0xE0000000` (see below). Everything
+else is unmapped.
 
 ```
 0x00000000 +----------------------------------+
            | kernel + low memory (identity)   |  shared PDEs 0..63, supervisor only
 0x00100000 | kernel image, PMM bitmap, ...    |
 0x00800000 +----------------------------------+ <- kernel heap (heap_init)
-           | kernel heap, 4 MiB               |    free list; also holds every process's
-0x00C00000 +----------------------------------+    16 KiB kernel stack
+           | kernel heap, 4 MiB               |    free list (kmalloc)
+0x00C00000 +----------------------------------+
            | ...                              |
 0x00FF0000 |  PF_TMP_PT_VA (kernel page fault |
            |   walker, debug only)            |
@@ -165,6 +171,11 @@ each process. Everything else is unmapped.
 0x3FFF8000 +----------------------------------+ <- user stack: USER_STACK_PAGES = 8, grows down
            | user stack (argc/argv at the top)|
 0x40000000 +----------------------------------+ <- USER_HI / USER_STACK_TOP
+           | unmapped                         |
+0xE0000000 +----------------------------------+ <- KSTACK_BASE, PDE 896, shared by every directory
+           | slot 0: [guard][16 KiB stack]    |    guard page is never mapped
+           | slot 1: [guard][16 KiB stack]    |    slot i = process table index i
+           | ... (KSTACK_SLOTS = 64)          |    each slot is 4 KiB + 16 KiB
            | unmapped                         |
 0xFFFFFFFF +----------------------------------+
 ```
@@ -182,8 +193,41 @@ How this behaves:
 - All `PT_LOAD` segments are mapped `P_PRESENT | P_USER | P_RW` regardless of `PF_W`.
 - `user_range_ok` (`mm/syscall.c`) accepts a user buffer only if it lies inside
   `[USER_LO, USER_HI)` and every page it touches is mapped in the caller's directory.
-- `paging_free_user` walks PDEs 64..1023 of a directory, frees every mapped user frame and each
-  page table, and optionally the directory frame.
+- `paging_free_user` walks PDEs 64..1023 of a directory (skipping the kernel-stack PDE), drops a
+  reference on every mapped user frame (a shared frame is only released with its last owner) and
+  frees each page table, and optionally the directory frame.
+- `CR0.WP` is set in `paging_init_identity`, so ring 0 also faults on writes to read-only pages.
+  The copy-on-write logic depends on this, since syscalls write into user buffers.
+
+### Copy-on-write
+
+`P_COW` (`0x200`, a software-available PTE bit) marks a page that is write-protected only because
+it is shared after `fork`. `paging_clone_user` builds the child's tables, and for every present
+user PTE that is writable it clears `P_RW`, sets `P_COW` in both the parent's and the child's
+PTE, and calls `pmm_ref_inc` on the frame; read-only pages are shared as they are. The parent's
+TLB is flushed by reloading CR3. No page contents are copied at fork time.
+
+`page_fault_handler` calls `paging_handle_cow(cr2)` first, for a write fault on a present page
+(`err & 3 == 3`) inside `[USER_LO, USER_HI)`, from user or kernel mode. If the PTE is read-only
+with `P_COW` set: when the frame's refcount is 1 the page is simply made writable again;
+otherwise a new frame is allocated, the 4 KiB are copied, one reference on the old frame is
+dropped, and the PTE is pointed at the copy with `P_RW` and without `P_COW`. The faulting
+instruction then restarts. If no frame can be allocated the handler returns 0 and the fault falls
+through to the normal path (a ring 3 process is killed with 139; a ring 0 fault halts).
+
+### Kernel stacks
+
+Each process's 16 KiB kernel stack (`KSTACK_BYTES`) is not on the heap. It lives in the region
+starting at `KSTACK_BASE = 0xE0000000`, which is PDE 896 (`KSTACK_PDE`). Its page table is
+created once in `paging_init_identity` and the PDE is copied into every directory by
+`paging_clone_directory`, so all stacks are visible in all address spaces (`paging_free_user`
+and `paging_clone_user` skip this PDE). The region is divided into `KSTACK_SLOTS = 64` slots of
+`[1 unmapped guard page][16 KiB stack]`; slot `i` belongs to process table index `i`.
+`kstack_alloc(slot)` maps fresh PMM frames for the stack part and returns its lowest address
+(0 on OOM); `kstack_free(slot)` unmaps and frees them. Running off the bottom of a stack touches
+the guard page, and `page_fault_handler` prints `KERNEL STACK OVERFLOW (guard page hit)` followed
+by the usual fault dump and halts. The pid 0 boot stack and the static 4 KiB TSS bootstrap stack
+have no guard.
 
 ### Heap
 
@@ -192,7 +236,7 @@ How this behaves:
 are 16-byte aligned. `kmalloc` splits a large free block; `kfree` marks a block free and
 coalesces with the following and preceding free blocks (a bad or double free prints a message
 and is ignored). The heap range is identity mapped and its frames are reserved in the PMM.
-Heap users: per-process kernel stacks (16 KiB each) and the temporary ELF image buffer.
+Heap users: the temporary ELF image buffer and other small kernel allocations (kernel stacks no longer come from the heap).
 
 ## 4. Interrupt and IRQ flow
 
@@ -235,7 +279,7 @@ ring 3 (`cs & 3`) and `ticks % 5 == 0`, calls `proc_yield()`. Ring 0 code is nev
 Exceptions go through `isr_common` to `isr_handler(regs_t*)`:
 
 - vector 0x80: `isr128_handler` path -> `syscall_handle`
-- vector 14: `page_fault_handler`. From ring 3 it prints `[pid N killed: segfault at ADDR, eip=...]` and calls `proc_exit(139)`. From ring 0 it prints CR2, EIP, error bits and walks the page tables, then halts (`cli; hlt` loop)
+- vector 14: `page_fault_handler`. First it tries `paging_handle_cow` (see section 3). Otherwise, from ring 3 it prints `[pid N killed: segfault at ADDR, eip=...]` and calls `proc_exit(139)`. From ring 0 it prints (preceded by `KERNEL STACK OVERFLOW` if CR2 is in a guard page) CR2, EIP, error bits and walks the page tables, then halts (`cli; hlt` loop)
 - other vectors below 32: from ring 3, prints `[pid N killed: <name> at eip=...]` and calls `proc_exit(128 + vector)`; from ring 0, prints the name, EIP/CS/EFLAGS and registers, then halts
 
 ## 5. Processes and scheduling
@@ -247,10 +291,12 @@ Exceptions go through `isr_common` to `isr_handler(regs_t*)`:
 - A static table of `NPROC = 16` `proc_t` entries. Slot 0 is the **kernel context** (pid 0): it
   has no private kernel stack (it runs on the boot stack) and uses the kernel page directory.
   It is the parent that adopts orphans and the process that runs the kernel shell.
+- `proc_t` also holds `fds[PROC_MAXFD]` (`PROC_MAXFD = 16`), the per-process descriptor table
+  described in section 7.
 - States: `UNUSED`, `RUNNABLE`, `RUNNING`, `SLEEPING` (blocked on a channel: `WAIT_CHILD` or
   `WAIT_CONSOLE`), `ZOMBIE`.
-- Each other process owns a **kernel stack** (`KSTACK_SIZE = 16384` bytes from `kmalloc`) and a
-  **page directory** (kernel PDEs shared, user PDEs private). Pids come from a counter and are
+- Each other process owns a **kernel stack** (`KSTACK_SIZE = 16384` bytes, from `kstack_alloc` in
+  the guarded kernel-stack region) and a **page directory** (kernel PDEs shared, user PDEs private). Pids come from a counter and are
   never reused within a boot; the shell started by `init=` is pid 1.
 - `struct context` holds the callee-saved registers (`edi, esi, ebx, ebp`) plus the return `eip`.
   `swtch(&old->ctx, new->ctx)` pushes those on the old stack, saves `esp`, loads the new `esp`,
@@ -300,16 +346,17 @@ sequenceDiagram
     participant PG as paging_clone_user
     participant C as child (new slot)
     P->>K: int 0x80, eax=2 (SYS_fork)
-    K->>K: proc_alloc: slot, kmalloc 16 KiB kstack,<br/>pid, parent = current
-    K->>PG: new directory: copy kernel PDEs, then for every user PTE<br/>alloc a frame and copy the 4 KiB (no COW)
+    K->>K: proc_alloc: slot, kstack_alloc (guarded 16 KiB),<br/>pid, parent = current, empty fd table
+    K->>PG: new directory: copy kernel PDEs, then for every user PTE<br/>share the frame (pmm_ref_inc), writable PTEs become<br/>read-only + P_COW in parent and child; nothing is copied
     K->>C: copy parent's trap frame onto child's kstack, child eax = 0
     K->>C: state = RUNNABLE
     K-->>P: eax = child pid, iret
     Note over C: when scheduled, swtch returns into trapret,<br/>iret: child continues after int 0x80 with fork() == 0
+    Note over P,C: first write by either side faults,<br/>paging_handle_cow copies that one page (or just re-enables<br/>write if it is the last owner)
 ```
 
-On out-of-memory (no slot, no kernel stack, or no frames) `fork` returns -1 and releases what it
-allocated.
+On out-of-memory (no slot, no kernel stack, or no frames for page tables) `fork` returns -1 and
+releases what it allocated. The child's fd table starts empty: open files are **not** inherited.
 
 ### exec
 
@@ -376,9 +423,10 @@ sequenceDiagram
 
 Details:
 
+- On exit, `proc_exit` also closes every open fd (3 and up) in the process's table.
 - A zombie keeps its slot and kernel stack (it is still running on that stack when it calls
   `sched()` the last time) until its parent reaps it in `proc_wait`; `proc_release` then
-  `kfree`s the stack.
+  releases the stack with `kstack_free`.
 - `waitpid(-1, ...)` (also `wait`) accepts any child; `waitpid(pid, ...)` a specific one; both
   return -1 immediately when there is no matching child. The `options` argument is ignored. The
   status is `(exit_code & 0xFF) << 8`, which is what `WEXITSTATUS` in `sys/wait.h` undoes.
@@ -414,13 +462,15 @@ flowchart LR
     IV --> TAR["tar scan: 512-byte headers,<br/>octal sizes (fs/initrd_tar.c helpers)"]
     IV --> ROOT["initrd_vfs_root() : vnode_t*"]
     ROOT --> VI["vfs_init(root)<br/>fs/vfs.c"]
-    VI --> API["vfs_open / read / close / stat / ls<br/>32-entry fd table"]
-    API --> CONSUMERS["kernel shell: ls cd cat hexdump<br/>user_load: ELF loading"]
+    VI --> API["vfs_open / read / seek / close / stat / readdir<br/>32-entry vfs fd table"]
+    API --> CONSUMERS["kernel shell: ls cd cat hexdump<br/>user_load: ELF loading<br/>file syscalls via per-process fd tables"]
 ```
 
 - The VFS is a vnode interface: `read(vn, off, buf, len)`, `readdir(vn, index, name, max)`, `lookup(dir, name)`. A vnode carries ops, an `fs_data` pointer, size and an `is_dir` flag.
 - `vfs_resolve` walks an absolute path component by component through `lookup`. Relative path handling (`.`, `..`, cwd) is done by the kernel shell (`shell_canon_path`), not the VFS. The user shell does no path resolution beyond prefixing `/bin/`.
-- There is a single global fd table of 32 entries, used only inside the kernel. User processes have no file descriptors beyond the fixed console semantics of fd 0/1/2; there is no `open` syscall.
+- `vfs.c` keeps a single global table of 32 open files (`vfs_open`, `vfs_read`, `vfs_seek`, `vfs_close`), plus path-based `vfs_stat` and `vfs_readdir_path(path, index, name, max)`. `vfs_seek(fd, off, whence)` takes 0=SET, 1=CUR, 2=END and returns the new offset or -1.
+- Each process has its own fd table, `proc_t.fds[PROC_MAXFD]` with `PROC_MAXFD = 16`, mapping a user fd to a VFS fd (-1 if free). User fds 0-2 are the console; fds 3 and up map to VFS files. `proc_fd_alloc` hands out the lowest free slot from 3, `proc_fd_get` rejects fds below 3 or past 15, and `proc_fd_free` clears a slot. The `open`/`close`/`lseek`/`read` syscalls go through these. All of a process's fds are closed in `proc_exit`, and a new process (including a `fork` child) starts with an empty table. The global VFS table is shared, so at most 32 files are open across all processes.
+- Files are read-only: `open` ignores any flags, there is no write path and `write` accepts only fds 1 and 2.
 - The initrd backend scans the tar on every lookup and directory read (no index). It is read-only.
 - The tar is built by `iso.sh` from `initrd/` (including the generated `initrd/bin`), with macOS metadata stripped (`COPYFILE_DISABLE`, `--no-xattrs`, `--exclude=._*`).
 
@@ -438,20 +488,27 @@ Linux i386.
 | Nr | Name | Args | Behavior |
 |---|---|---|---|
 | 1 | `SYS_exit` | `ebx` = status | ends the calling process (zombie until reaped); never returns |
-| 2 | `SYS_fork` | none | duplicates the process (deep page copy); returns the child's pid to the parent and 0 to the child, or -1 |
-| 3 | `SYS_read` | `ebx` = fd (must be 0), `ecx` = buf, `edx` = len | blocking, line-buffered read from the console; sleeps until a full line is available and returns up to one line (including the `\n`), at most `len` bytes; -1 for another fd or a bad buffer |
+| 2 | `SYS_fork` | none | duplicates the process (copy-on-write: user pages are shared and copied on first write; the fd table is not inherited); returns the child's pid to the parent and 0 to the child, or -1 |
+| 3 | `SYS_read` | `ebx` = fd, `ecx` = buf, `edx` = len | fd 0: blocking, line-buffered read from the console; sleeps until a full line is available and returns up to one line (including the `\n`), at most `len` bytes. fd 3+: reads from the open file at its current offset, returns bytes read (0 at EOF). -1 for fd 1/2, an unopened fd or a bad buffer |
 | 4 | `SYS_write` | `ebx` = fd (1 or 2), `ecx` = buf, `edx` = len | writes to the VGA terminal via `putchar`; fd 1 and 2 are identical; returns `len`, or -1 for another fd or an invalid buffer |
+| 5 | `SYS_open` | `ebx` = path | opens a file (read-only; no flags argument is read); returns the lowest free fd from 3, or -1 (bad path, not found, fd table full) |
+| 6 | `SYS_close` | `ebx` = fd | closes fd 3+; 0, or -1 if not open |
 | 7 | `SYS_waitpid` | `ebx` = pid (or -1), `ecx` = `int*` status (may be 0), `edx` ignored | blocks until a matching child is a zombie; returns its pid and reaps it; -1 if there is no such child |
 | 11 | `SYS_execve` | `ebx` = path, `ecx` = `argv` (NULL-terminated, may be 0) | replaces the process image; returns only on failure (-1). Up to 16 args of 128 bytes; `envp` is not passed |
+| 19 | `SYS_lseek` | `ebx` = fd, `ecx` = offset, `edx` = whence (0 SET, 1 CUR, 2 END) | returns the new offset or -1 |
 | 20 | `SYS_getpid` | none | the caller's pid |
+| 89 | `SYS_readdir` | `ebx` = path, `ecx` = index, `edx` = `char name[128]` | copies the index-th entry name of the directory into `name`; returns 1, 0 past the last entry, or -1 on error |
+| 106 | `SYS_stat` | `ebx` = path, `ecx` = `struct bob_stat*` | fills `size` and `is_dir`; 0, or -1 |
 | other | | | returns -1 |
 
 The header also provides `__syscall3(num, a, b, c)` as an inline helper; the libc wrappers use
 it. All user pointers are checked with `user_range_ok` (inside the user region, every page
 mapped) before the kernel touches them.
 
-libc wrappers (`libc/unistd/`, `libc/stdlib/exit.c`): `read`, `write`, `getpid`, `fork`,
-`execv`, `execve`, `_exit`, `waitpid`, `wait`, `exit`; `sys/wait.h` defines `WEXITSTATUS`
+libc wrappers (`libc/unistd/`, `libc/stdlib/exit.c`): `read`, `write`, `open`, `close`, `lseek`,
+`getpid`, `fork`, `execv`, `execve`, `_exit`, `waitpid`, `wait`, `exit`, `stat` (`sys/stat.h`,
+`struct stat` with `st_size` and `st_isdir`) and `readdir_at(path, index, name)` (`dirent.h`, names
+up to `DIRENT_NAME_MAX` = 128), plus `strcat` in `string.h`; `sys/wait.h` defines `WEXITSTATUS`
 (and a `WIFEXITED` that is always true). `exit` has no atexit handlers; stdio is unbuffered
 (`putchar` is a one-byte `write`).
 
@@ -506,6 +563,8 @@ The pid 0 main loop calls `shell_poll()`, which runs `shell_on_line`: it tokeniz
 prompt `bobliu:<cwd>> `. Because it runs with interrupts enabled outside any IRQ, commands may
 block. `exec <path> [args...]` calls `proc_spawn` and `proc_wait`; `ps` calls `proc_dump`.
 
+**User programs `cat` and `ls`** (`user/cat.c`, `user/ls.c`) use the file syscalls: `cat` opens each argument and copies it to fd 1; `ls [dir]` walks a directory with `readdir_at` and `stat`. There is no per-process working directory, so paths passed to them are absolute (or resolved from the VFS root).
+
 **User shell** (`user/sh.c`). A normal ring 3 program. It prints `$ `, `read`s a line from fd 0,
 splits it on spaces (max 16 arguments), handles the built-in `exit`, and otherwise `fork`s; the
 child `execv`s `/bin/<cmd>` (or the given path if it contains `/`) and prints
@@ -524,10 +583,10 @@ does nothing, lines are never submitted and `init=` is ignored.
 
 ## 11. Known limitations
 
-- **No copy-on-write.** `fork` allocates a frame and copies 4 KiB for every present user page of the parent (code, data and the 8-page stack), so it is O(size of the process) and can fail with -1 when memory is short.
+- **Copy-on-write details.** `fork` copies nothing until a write, but still walks and clones all page tables. If allocating the new frame fails during a COW fault, the fault falls through to the normal path and the process is killed (segfault, 139). Frame refcounts are one byte each, saturate at 255 sharers, and only the first 512 MiB of frames are tracked.
 - **Cooperative blocking only in `waitpid` and `read`.** Preemption happens only for ring 3 code, on the timer (every 5 ticks = 50 ms). Kernel code, including whole syscalls, is never preempted; the kernel context (pid 0) and syscalls run to completion or until they sleep. There is no `sleep`, `yield`, `kill` or signal syscall, and no priorities.
-- **No kernel-stack guard page.** Each process has a 16 KiB stack from `kmalloc` in the identity-mapped heap. Overflow silently corrupts the neighbouring heap block. The pid 0 context uses the 16 KiB boot stack, and the TSS bootstrap stack is a static 4 KiB buffer. (GitHub issue #9.)
-- **No file syscalls.** There is no `open`, `close`, `lseek` or `brk`/`mmap`; `read` works only on fd 0, `write` only on fd 1 and 2 (identical). There is no per-process fd table. (GitHub issue #8.)
+- **Kernel-stack guard covers process stacks only.** Process stacks have an unmapped guard page, but the pid 0 context still runs on the 16 KiB boot stack and the TSS bootstrap stack is a static 4 KiB buffer, neither guarded. A guard hit is fatal: the kernel prints `KERNEL STACK OVERFLOW` and halts.
+- **File support is minimal.** Files are read-only (`open` ignores flags; `write` works only on fds 1 and 2, identical). There is no `dup`, `pipe`, `brk`/`mmap`, `chdir` or per-process cwd. A process has 16 fds (0-2 reserved for the console), the kernel has 32 open files in total, and fds are not inherited across `fork` (a forked child must reopen files).
 - **Process limits.** At most 16 processes (including pid 0); pids are not reused within a boot and a process that finds no free slot or no memory gets -1 from `fork`.
 - **Argument passing.** `execve` copies at most 16 arguments of 128 bytes each (the path is also limited to 128 bytes); longer ones make it fail with -1. `envp` is ignored and no environment is passed.
 - **stdin is one global console buffer.** All processes share it; whichever calls `read` first gets a line. Input is only delivered to user programs while pid 0 is blocked in `waitpid`; otherwise lines go to the kernel shell. A line over the buffer's free space is dropped. There is no raw mode, no EOF (Ctrl-D), no Ctrl-C.
@@ -535,7 +594,7 @@ does nothing, lines are never submitted and `init=` is ignored.
 - **Identity paging for the kernel.** The kernel lives in the low 256 MiB with no higher-half mapping. Page tables and user frames are accessed through that identity map, but the PMM does not cap allocations below 256 MiB, so on a machine with more RAM and exhausted low memory a frame above 256 MiB would be unreachable.
 - **Permissions are coarse.** All loaded segments are mapped read/write/user; no NX, no `PF_W` handling. The ELF loader reads the entire file (at most 512 KiB) into a temporary heap buffer.
 - **Heap.** 4 MiB total at a fixed address, first-fit (linear scan, no size classes); `kmalloc_aligned` ignores its alignment argument. The `alloc` shell command leaks its block by design.
-- **Kernel exceptions halt.** A CPU exception or page fault in ring 0 prints a dump and stops the machine. (In ring 3 only the faulting process is killed.)
+- **Kernel exceptions halt.** A CPU exception or page fault in ring 0 (other than a handled COW fault) prints a dump and stops the machine. (In ring 3 only the faulting process is killed.)
 - **Interrupt setup is redundant and early.** `gdt_init` and `idt_init` run twice (once in `interrupts_init`, again in `kernel_main` around the TSS), and interrupts are enabled before PMM and paging exist.
 - **Input and output.** US-layout scancode set 1 only; extended (`E0`) keys are ignored. Output is VGA text mode only; no serial console.
 - **Stack protector.** Disabled for the kernel build; `ssp.c` and the guard exist but `ssp_init` is not called in `kernel_main`.
