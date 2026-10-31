@@ -1,29 +1,38 @@
 #include <stdint.h>
 #include <arch/i386/isr.h>
+#include <arch/i386/user_bouncing.h>
+#include <kernel/syscall.h>
 
 extern int putchar(int);
 
+#define USER_LO 0x00400000u
+#define USER_HI 0x02000000u
+
+// user buffer must sit entirely inside the user region
+static int user_range_ok(uint32_t p, uint32_t len) {
+    if (p < USER_LO || p >= USER_HI) return 0;
+    if (len > USER_HI - p) return 0;
+    return 1;
+}
+
 static int sys_write(uint32_t fd, const char* buf, uint32_t len) {
-    (void)fd; // for now ignore, treat as stdout
-    int wrote = 0;
-    for (uint32_t i = 0; i < len; i++) {
-        putchar((unsigned char)buf[i]);
-        wrote++;
-    }
-    return wrote;
+    if (fd != 1 && fd != 2) return -1;
+    if (!user_range_ok((uint32_t)buf, len)) return -1;
+    for (uint32_t i = 0; i < len; i++) putchar((unsigned char)buf[i]);
+    return (int)len;
 }
 
 void syscall_handle(regs_t* r) {
-    uint32_t num = r->eax;
-
-    switch (num) {
-    case 4: { // write
-        uint32_t fd  = r->ebx;
-        const char* buf = (const char*)r->ecx;
-        uint32_t len = r->edx;
-        r->eax = (uint32_t)sys_write(fd, buf, len);
+    switch (r->eax) {
+    case SYS_exit:
+        g_user_exited = 1;   // isr stub bounces back to the kernel after unwinding
         return;
-    }
+    case SYS_write:
+        r->eax = (uint32_t)sys_write(r->ebx, (const char*)r->ecx, r->edx);
+        return;
+    case SYS_getpid:
+        r->eax = 1;          // single process for now
+        return;
     default:
         r->eax = (uint32_t)-1;
         return;

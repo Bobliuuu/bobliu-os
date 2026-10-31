@@ -45,6 +45,7 @@ void exec_bounce_to_kernel(void) {
 }
 */
 
+extern void syscall_handle(regs_t* r);
 void isr_handler(regs_t* r) {
     //terminal_putchar('S');
     if (r->int_no == 14) {
@@ -91,18 +92,5 @@ void irq_handler(regs_t* r) {
 }
 
 void isr128_handler(regs_t* r) {
-    // convention: eax = syscall number, ebx/ecx/edx = args
-    // for testing: syscall 1 => print a char in BL
-    if (r->eax == 1) {
-        putchar((char)(r->ebx & 0xFF));
-        return;
-    }
-
-    // syscall 2 => print string at user pointer EBX (unsafe!!!) -> need copy + validation
-    if (r->eax == 2) { // exit(code)
-        g_user_exited = 1;
-        return;
-    }
-
-    return;
+    syscall_handle(r);
 }

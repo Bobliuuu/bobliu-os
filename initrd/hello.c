@@ -1,30 +1,10 @@
-#include <stdint.h>
+#include <kernel/syscall.h>
 
-static inline void sys_exit(int code) {
-    asm volatile(
-        "movl $2, %%eax\n"   // SYS_exit = 2
-        "movl %0, %%ebx\n"
-        "int $0x80\n"
-        :
-        : "r"(code)
-        : "eax", "ebx"
-    );
-    __builtin_unreachable();
-}
+static int strlen_(const char* s) { int n = 0; while (s[n]) n++; return n; }
 
 void _start(void) {
-    const char* s = "hello from userland!\n";
-    while (*s) {
-        // your sys_putchar
-        uint32_t v = (uint32_t)*s++;
-        asm volatile(
-            "movl $1, %%eax\n"
-            "movl %0, %%ebx\n"
-            "int $0x80\n"
-            :
-            : "r"(v)
-            : "eax","ebx"
-        );
-    }
-    sys_exit(0);
+    const char* msg = "hello from userland!\n";
+    __syscall3(SYS_write, 1, (int)msg, strlen_(msg));
+    __syscall3(SYS_exit, 0, 0, 0);
+    for (;;) {}
 }
