@@ -2,9 +2,9 @@
 set -e
 . ./build.sh
 
-# user programs (needs headers in sysroot, build.sh installs them)
-i686-elf-gcc -ffreestanding -nostdlib -O2 -m32 -fno-pic -fno-stack-protector \
-  -I sysroot/usr/include -T initrd/hello.ld -o initrd/hello initrd/hello.c
+# user programs, built with the bobliu toolchain wrapper
+./toolchain/build.sh
+./toolchain/i686-bobliu-gcc -O2 -o initrd/hello initrd/hello.c
 
 mkdir -p isodir
 mkdir -p isodir/boot

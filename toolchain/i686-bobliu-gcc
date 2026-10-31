@@ -1,0 +1,25 @@
+#!/bin/sh
+# gcc wrapper that targets bobliu user space.
+#   compile:  i686-bobliu-gcc -c foo.c -o foo.o
+#   link:     i686-bobliu-gcc foo.c -o foo      (adds crt0, user.ld, libc if built)
+# needs ./headers.sh run first (sysroot/usr/include) and toolchain/build.sh (crt0.o).
+set -e
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SYSROOT="$ROOT/sysroot"
+CC="${BOBLIU_CC:-i686-elf-gcc}"
+
+COMMON="-m32 -ffreestanding -fno-pic -fno-stack-protector -isystem $SYSROOT/usr/include"
+
+link=1
+for a in "$@"; do
+  case "$a" in -c|-S|-E) link=0;; esac
+done
+
+if [ $link = 0 ]; then
+  exec $CC $COMMON "$@"
+fi
+
+LIBC=""
+[ -f "$SYSROOT/usr/lib/libc.a" ] && LIBC="-lc"
+exec $CC $COMMON -nostdlib -T "$ROOT/toolchain/user.ld" \
+  "$SYSROOT/usr/lib/crt0.o" "$@" -L "$SYSROOT/usr/lib" $LIBC -lgcc
