@@ -21,3 +21,7 @@ isodir/
 .DS_Store
 .vscode/
 .idea/
+# user programs built by iso.sh
+initrd/hello
+initrd/forktest
+initrd/crash

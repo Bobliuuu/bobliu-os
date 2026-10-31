@@ -1,12 +1,12 @@
 #include <stdint.h>
 #include <arch/i386/isr.h>   // for regs_t
 #include <stdio.h>
+#include <kernel/proc.h>
 #include <arch/i386/paging.h>
 
 extern void vga_print(const char* s);
 extern void vga_print_hex(uint32_t x);
 
-extern volatile uint32_t dbg_iret_eip, dbg_iret_cs, dbg_iret_eflags, dbg_iret_esp, dbg_iret_ss;
 
 #define PF_TMP_PT_VA 0x00FF0000u  // must be in your kernel-mapped region (0..16MB)
 
@@ -68,6 +68,11 @@ static void pf_walk(uint32_t cr2) {
 void page_fault_handler(regs_t* r) {
     uint32_t cr2 = read_cr2();
 
+    if (r->cs & 3) {
+        printf("\n[pid %d killed: segfault at %x, eip=%x]\n", proc_current()->pid, cr2, r->eip);
+        proc_exit(139);
+    }
+
     vga_print("\nPAGE FAULT: cr2=");
     vga_print_hex(cr2);
     vga_print(" eip=");
@@ -77,17 +82,6 @@ void page_fault_handler(regs_t* r) {
     vga_print(" ");
     print_pf_bits(r->err_code);
     vga_print("\n");
-
-    vga_print("IRET frame (last): eip=");
-    vga_print_hex(dbg_iret_eip);
-    vga_print("cs=");
-    vga_print_hex(dbg_iret_cs);
-    vga_print("eflags=");
-    vga_print_hex(dbg_iret_eflags);
-    vga_print("esp=");
-    vga_print_hex(dbg_iret_esp);
-    vga_print("ss=");
-    vga_print_hex(dbg_iret_ss);
 
     pf_walk(cr2);
     

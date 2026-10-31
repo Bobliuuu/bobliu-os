@@ -146,7 +146,7 @@ void keyboard_irq(regs_t* r) {
     if (sc == SC_ENTER) {
         terminal_putchar('\n');
         if (shell_enabled) {
-            shell_on_line(linebuf);
+            shell_submit(linebuf);
         }
         line_reset();
         return;

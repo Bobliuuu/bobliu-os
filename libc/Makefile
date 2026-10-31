@@ -49,6 +49,9 @@ HOSTEDOBJS=\
 $(ARCH_HOSTEDOBJS) \
 unistd/write.o \
 unistd/getpid.o \
+unistd/fork.o \
+unistd/exec.o \
+unistd/wait.o \
 unistd/_exit.o \
 stdlib/exit.o \
 

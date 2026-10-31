@@ -172,6 +172,10 @@ void pmm_init(uint32_t multiboot_magic, uintptr_t multiboot_info_phys) {
     printf("max_phys=%x total_frames=%u\n", (uint32_t)max_phys, pmm_total_frames());
 }
 
+void pmm_reserve_range(uintptr_t paddr, uintptr_t len) {
+    mark_used_range(paddr, len);
+}
+
 uintptr_t pmm_alloc_frame(void) {
     /* simple first-fit scan */
     for (uint32_t f = 0; f < g_total_frames; f++) {

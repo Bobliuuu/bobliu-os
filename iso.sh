@@ -4,7 +4,9 @@ set -e
 
 # user programs, built with the bobliu toolchain wrapper
 ./toolchain/build.sh
-./toolchain/i686-bobliu-gcc -O2 -o initrd/hello initrd/hello.c
+for prog in hello forktest crash; do
+  ./toolchain/i686-bobliu-gcc -O2 -o initrd/$prog initrd/$prog.c
+done
 
 mkdir -p isodir
 mkdir -p isodir/boot

@@ -1,24 +1,11 @@
 // isr.c
 #include <arch/i386/isr.h>
 #include <arch/i386/portio.h>
-#include <arch/i386/user_bouncing.h>
+#include <kernel/proc.h>
 #include <stdio.h>
 
-extern volatile uint32_t g_user_exited;
-extern volatile uint32_t g_exec_kesp;
-extern volatile uint32_t g_exec_resume_eip;
-extern volatile uint32_t g_exec_kcr3;
-
-extern volatile uint32_t dbg_iret_eip, dbg_iret_cs, dbg_iret_eflags, dbg_iret_esp, dbg_iret_ss;
-
-// use your kernel printf
-extern int printf(const char*, ...);
-// Page fault handler
 void page_fault_handler(regs_t* r);
-// Syscall handler for userspace
-// extern void syscall_handle(regs_t* r);
-// Return to kernel asm
-extern void usermode_return_to_kernel(void) __attribute__((noreturn));
+void syscall_handle(regs_t* r);
 
 static const char* exc_names[32] = {
     "Divide-by-zero","Debug","NMI","Breakpoint","Overflow","Bound Range",
@@ -30,38 +17,29 @@ static const char* exc_names[32] = {
     "Security","Reserved"
 };
 
-/*
-static __attribute__((noreturn)) 
-void exec_bounce_to_kernel(void) {
-    asm volatile(
-        "cli\n"
-        "mov %0, %%esp\n"
-        "jmp *%1\n"
-        :
-        : "r"(g_exec_kesp), "r"(g_exec_resume_eip)
-        : "memory"
-    );
-    __builtin_unreachable();
-}
-*/
-
-extern void syscall_handle(regs_t* r);
 void isr_handler(regs_t* r) {
-    //terminal_putchar('S');
-    if (r->int_no == 14) {
-        page_fault_handler(r);
-    }
     if (r->int_no == 128) {
-        isr128_handler(r);
+        syscall_handle(r);
         return;
     }
 
+    if (r->int_no == 14) {
+        page_fault_handler(r);   // kills the process if it came from ring 3
+    }
+
     if (r->int_no < 32) {
-        printf("\n\n[EXCEPTION %u] %s  err=%u\n", r->int_no, exc_names[r->int_no], r->err_code);
+        // fault in user code: kill just that process
+        if (r->cs & 3) {
+            printf("\n[pid %d killed: %s at eip=%x]\n", proc_current()->pid,
+                   exc_names[r->int_no], r->eip);
+            proc_exit(128 + (int)r->int_no);
+        }
+
+        printf("\n*** CPU EXCEPTION %u: %s ***\n", r->int_no, exc_names[r->int_no]);
+        printf("ERR=%x\n", r->err_code);
         printf("EIP=%x CS=%x EFLAGS=%x\n", r->eip, r->cs, r->eflags);
         printf("EAX=%x EBX=%x ECX=%x EDX=%x\n", r->eax, r->ebx, r->ecx, r->edx);
         printf("ESI=%x EDI=%x EBP=%x ESP=%x\n", r->esi, r->edi, r->ebp, r->esp);
-        // Halt forever so you can read it
         for (;;) { __asm__ volatile ("cli; hlt"); }
     }
 }
@@ -72,7 +50,6 @@ static inline void pic_send_eoi(unsigned int int_no) {
     outb(0x20, 0x20);                     // master PIC
 }
 
-// Simple IRQ dispatch table
 typedef void (*irq_fn)(regs_t*);
 static irq_fn irq_routines[16] = {0};
 
@@ -82,15 +59,11 @@ void irq_uninstall_handler(int irq) { irq_routines[irq] = 0; }
 void irq_handler(regs_t* r) {
     int irq = (int)r->int_no - 32;
 
-    // EOI first: a handler (e.g. the shell running exec from the keyboard
-    // irq) may never return here, which would leave the PIC stuck in-service.
+    // EOI first: a handler may context switch (timer preemption) and not
+    // come back for a while, which would leave the PIC stuck in-service.
     pic_send_eoi(r->int_no);
 
     if (irq >= 0 && irq < 16 && irq_routines[irq]) {
         irq_routines[irq](r);
     }
-}
-
-void isr128_handler(regs_t* r) {
-    syscall_handle(r);
 }

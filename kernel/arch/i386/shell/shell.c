@@ -6,12 +6,11 @@
 #include <kernel/tty.h>
 #include <kernel/user_exec.h>
 #include <arch/i386/keyboard.h>
-#include <arch/i386/user_bouncing.h>
+#include <kernel/proc.h>
 #include <arch/i386/isr.h>
 #include <arch/i386/portio.h>
 #include <arch/i386/paging.h>
 
-extern volatile uint32_t g_exec_kcr3;
 
 // If you have timer ticks exported:
 extern uint32_t timer_ticks(void);
@@ -56,6 +55,7 @@ static int cmd_ls(int argc, char** argv);
 static int cmd_cat(int argc, char** argv);
 static int cmd_hexdump(int argc, char** argv);
 static int cmd_exec(int argc, char** argv);
+static int cmd_ps(int argc, char** argv);
 
 static const cmd_t cmds[] = {
     { "help",    cmd_help },
@@ -71,6 +71,7 @@ static const cmd_t cmds[] = {
     { "cat",     cmd_cat },
     { "hexdump", cmd_hexdump },
     { "exec", cmd_exec },
+    { "ps",      cmd_ps },
     { "panic",   cmd_panic },
 };
 static const int cmd_count = (int)(sizeof(cmds)/sizeof(cmds[0]));
@@ -212,7 +213,9 @@ static int cmd_help(int argc, char** argv) {
     printf("  help            - show this\n");
     printf("  clear           - clear screen\n");
     printf("  echo <text...>  - print text\n");
-    printf("  ticks           - show timer ticks\n");
+    printf("  ticks / uptime  - show timer ticks / uptime\n");
+    printf("  exec <path>     - run a program and wait for it\n");
+    printf("  ps              - list processes\n");
     printf("  mem             - show physical memory stats\n");
     printf("  alloc <bytes>   - kmalloc test\n");
     printf("  pwd             - print cwd\n");
@@ -362,15 +365,21 @@ static int cmd_exec(int argc, char** argv) {
     char path[256];
     shell_canon_path(path, g_cwd, argv[1]);
 
-    if (user_exec(path) < 0) {
+    int pid = proc_spawn(path);
+    if (pid < 0) {
         printf("exec: failed: %s\n", path);
         return -1;
     }
-    keyboard_enable_shell(true);
-    printf("\n");
-    printf("FINISHED\n");
-    shell_prompt_public();
-    return 0; // never reached on success
+    int status = 0;
+    proc_wait(pid, &status);
+    if (status) printf("[pid %d exited with %d]\n", pid, (status >> 8) & 0xFF);
+    return 0;
+}
+
+static int cmd_ps(int argc, char** argv) {
+    (void)argc; (void)argv;
+    proc_dump();
+    return 0;
 }
 
 void shell_init(void) {
@@ -416,18 +425,24 @@ void shell_on_line(const char* line_in) {
     shell_prompt();
 }
 
-__attribute__((noreturn))
-void exec_return_to_shell(void) {
-    keyboard_enable_shell(true);
-    printf("\n");
-    shell_prompt_public();
+// keyboard irq hands us a finished line; the real work happens in shell_poll()
+// from the kernel main loop so commands can block (exec/wait) with irqs on.
+static char g_pending[128];
+static volatile int g_pending_set = 0;
 
-    __asm__ volatile("sti");          // <<< ADD THIS
-    for (;;) {
-        //if (inb(0x64) & 1) {      // output buffer full
-            //uint8_t sc = inb(0x60);
-            //printf("{%x}", sc);
-        //}
-        __asm__ volatile("hlt");
-    }
+void shell_submit(const char* line) {
+    if (g_pending_set) return;          // still busy with the last one
+    size_t n = strlen(line);
+    if (n >= sizeof(g_pending)) n = sizeof(g_pending) - 1;
+    memcpy(g_pending, line, n);
+    g_pending[n] = '\0';
+    g_pending_set = 1;
+}
+
+void shell_poll(void) {
+    if (!g_pending_set) return;
+    char line[128];
+    strcpy(line, g_pending);
+    shell_on_line(line);
+    g_pending_set = 0;
 }

@@ -18,6 +18,7 @@
 #include <arch/i386/gdt.h>
 #include <arch/i386/tss.h>
 #include <arch/i386/idt.h>
+#include <kernel/proc.h>
 
 void interrupts_init(void);
 // void ssp_test_run(void);
@@ -86,6 +87,7 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 	*/
 
 	heap_init(0x00800000u, 0x00400000u);
+	proc_init();
 
 	if (a) pmm_free_frame(a);
 	if (b) pmm_free_frame(b);
@@ -127,7 +129,12 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 
 	keyboard_enable_shell(enable_shell);
 
-    for(;;) __asm__ volatile("hlt");
+    // kernel context (pid 0): run shell lines queued by the keyboard irq
+    for (;;) {
+        shell_poll();
+        proc_reap_orphans();
+        __asm__ volatile("sti; hlt");
+    }
 
 	/* TEST FOR ERROR */
 	//volatile int x = 1 / 0;

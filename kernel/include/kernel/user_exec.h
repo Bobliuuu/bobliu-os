@@ -1,4 +1,3 @@
 #pragma once
 #include <stdint.h>
-
-int user_exec(const char* path);  // loads + enters ring3, never returns on success
+/* see kernel/proc.h: user_load() builds the address space, proc_spawn()/proc_exec() run it */

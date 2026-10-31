@@ -155,8 +155,20 @@ page_directory_t paging_kernel_directory(void) {
 }
 
 void paging_switch_directory(page_directory_t dir) {
-    g_pd = dir.pd_virt;
     asm volatile("mov %0, %%cr3" :: "r"((uint32_t)dir.pd_phys) : "memory");
+}
+
+void paging_load(page_directory_t dir) {
+    asm volatile("mov %0, %%cr3" :: "r"((uint32_t)dir.pd_phys) : "memory");
+}
+
+uint32_t paging_translate_in(page_directory_t dir, uint32_t vaddr) {
+    uint32_t pde = dir.pd_virt[pde_index(vaddr)];
+    if (!(pde & P_PRESENT)) return 0;
+    uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
+    uint32_t pte = pt[pte_index(vaddr)];
+    if (!(pte & P_PRESENT)) return 0;
+    return (pte & 0xFFFFF000u) | (vaddr & 0xFFF);
 }
 
 static uint32_t* get_or_alloc_pt_in(page_directory_t dir, uint32_t vaddr, uint32_t flags, int make) {
@@ -226,5 +238,46 @@ page_directory_t paging_clone_directory(page_directory_t src) {
 }
 
 uint32_t* paging_current_pd_virt(void) {
-    return g_pd;   // g_pd stays static
+    uint32_t cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(cr3));
+    return (uint32_t*)cr3;   // identity mapped
+}
+
+void paging_free_user(page_directory_t dir, int free_pd) {
+    for (uint32_t pdi = KERNEL_PDE_END; pdi < PDE_COUNT; pdi++) {
+        uint32_t pde = dir.pd_virt[pdi];
+        if (!(pde & P_PRESENT)) continue;
+        uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
+        for (uint32_t i = 0; i < PTE_COUNT; i++) {
+            if (pt[i] & P_PRESENT) pmm_free_frame(pt[i] & 0xFFFFF000u);
+        }
+        pmm_free_frame((uintptr_t)pt);
+        dir.pd_virt[pdi] = 0;
+    }
+    if (free_pd) pmm_free_frame((uintptr_t)dir.pd_virt);
+}
+
+page_directory_t paging_clone_user(page_directory_t src) {
+    page_directory_t out = paging_clone_directory(src);
+
+    for (uint32_t pdi = KERNEL_PDE_END; pdi < PDE_COUNT; pdi++) {
+        uint32_t pde = src.pd_virt[pdi];
+        if (!(pde & P_PRESENT)) continue;
+        uint32_t* spt = (uint32_t*)(pde & 0xFFFFF000u);
+        uint32_t* dpt = alloc_table();
+        out.pd_virt[pdi] = ((uint32_t)dpt) | (pde & 0xFFFu);   // table now owned by out
+
+        for (uint32_t i = 0; i < PTE_COUNT; i++) {
+            if (!(spt[i] & P_PRESENT)) continue;
+            uintptr_t f = pmm_alloc_frame();
+            if (!f) {
+                paging_free_user(out, 1);
+                out.pd_phys = 0; out.pd_virt = 0;
+                return out;
+            }
+            memcpy32((void*)f, (void*)(spt[i] & 0xFFFFF000u), PAGE_SIZE);
+            dpt[i] = f | (spt[i] & 0xFFFu);
+        }
+    }
+    return out;
 }

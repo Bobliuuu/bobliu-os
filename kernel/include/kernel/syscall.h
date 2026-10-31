@@ -7,7 +7,10 @@
  * numbers follow linux i386 so existing docs/toolchains line up.
  */
 #define SYS_exit    1
+#define SYS_fork    2
 #define SYS_write   4
+#define SYS_waitpid 7
+#define SYS_execve  11
 #define SYS_getpid  20
 
 #ifndef __ASSEMBLER__

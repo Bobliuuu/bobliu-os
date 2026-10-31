@@ -4,22 +4,38 @@
 extern void vga_print(const char* s);
 extern void vga_print_hex(uint32_t x);
 
-#define PAGE_SIZE 4096u
-#define ALIGN_UP(x,a)   (((x) + ((a)-1)) & ~((a)-1))
+/*
+ * first-fit free-list heap with split + coalesce.
+ * the region is identity mapped and its frames are reserved in the pmm so
+ * nobody else hands them out.
+ */
 
-static uintptr_t g_heap_start = 0;
-static uintptr_t g_heap_end   = 0;   // max virtual address we allow
-static uintptr_t g_heap_brk   = 0;   // bump pointer
+typedef struct blk {
+    size_t size;        // payload bytes
+    struct blk* next;   // next block in address order
+    uint32_t free;
+    uint32_t magic;
+} blk_t;                // 16 bytes on i386
 
-static uintptr_t g_heap_mapped_end = 0; // end of backed pages
+#define HDR       ((size_t)sizeof(blk_t))
+#define MAGIC     0xB0B11AAAu
+#define ALIGN_UP(x,a) (((x) + ((a)-1)) & ~((a)-1))
+
+static blk_t* g_head = 0;
+static uintptr_t g_heap_start = 0, g_heap_end = 0;
+static size_t g_used = 0;
 
 void heap_init(uintptr_t heap_start, size_t heap_size) {
-    g_heap_start = ALIGN_UP(heap_start, 16);
-    g_heap_end   = g_heap_start + heap_size;
-    g_heap_brk   = g_heap_start;
+    g_heap_start = ALIGN_UP(heap_start, 4096);
+    g_heap_end   = g_heap_start + (heap_size & ~(size_t)4095);
 
-    // initially nothing is backed; we’ll map “identity pages” by just allocating frames
-    g_heap_mapped_end = g_heap_start;
+    pmm_reserve_range(g_heap_start, g_heap_end - g_heap_start);
+
+    g_head = (blk_t*)g_heap_start;
+    g_head->size  = (g_heap_end - g_heap_start) - HDR;
+    g_head->next  = 0;
+    g_head->free  = 1;
+    g_head->magic = MAGIC;
 
     vga_print("heap: start=");
     vga_print_hex((uint32_t)g_heap_start);
@@ -28,48 +44,60 @@ void heap_init(uintptr_t heap_start, size_t heap_size) {
     vga_print("\n");
 }
 
-static void heap_ensure_backed(uintptr_t new_brk) {
-    // identity-mapped world: just ensure we reserve physical frames for pages we will touch
-    // new_brk is the first byte AFTER allocation
-    uintptr_t need = ALIGN_UP(new_brk, PAGE_SIZE);
-
-    while (g_heap_mapped_end < need) {
-        uintptr_t phys = pmm_alloc_frame();
-        if (!phys) {
-            vga_print("heap: OOM\n");
-            for(;;) asm volatile("cli; hlt");
-        }
-
-        // Because we're identity-mapped right now, we REQUIRE phys == g_heap_mapped_end
-        // If PMM gives something else, we can still use it later once we have a real mapper,
-        // but for now keep it simple: just consume frames and ignore phys location.
-        // We'll still advance mapped_end so touching memory is "backed by something".
-        (void)phys;
-
-        g_heap_mapped_end += PAGE_SIZE;
-    }
-}
-
-void* kmalloc_aligned(size_t size, size_t align) {
-    if (align < 16) align = 16;
-    uintptr_t p = ALIGN_UP(g_heap_brk, align);
-    uintptr_t new_brk = p + size;
-
-    if (new_brk > g_heap_end) return 0;
-
-    heap_ensure_backed(new_brk);
-    g_heap_brk = new_brk;
-    return (void*)p;
-}
-
 void* kmalloc(size_t size) {
-    return kmalloc_aligned(size, 16);
+    if (!g_head) return 0;
+    size = ALIGN_UP(size ? size : 1, 16);
+
+    for (blk_t* b = g_head; b; b = b->next) {
+        if (!b->free || b->size < size) continue;
+
+        // split if the leftover can hold a header + 16 bytes
+        if (b->size >= size + HDR + 16) {
+            blk_t* n = (blk_t*)((uint8_t*)b + HDR + size);
+            n->size  = b->size - size - HDR;
+            n->next  = b->next;
+            n->free  = 1;
+            n->magic = MAGIC;
+            b->size  = size;
+            b->next  = n;
+        }
+        b->free = 0;
+        g_used += b->size;
+        return (uint8_t*)b + HDR;
+    }
+    return 0;
+}
+
+// only used for align <= 16 callers today; bigger alignments are not supported
+void* kmalloc_aligned(size_t size, size_t align) {
+    (void)align;
+    return kmalloc(size);
 }
 
 void kfree(void* ptr) {
-    (void)ptr;
-    // bump allocator: no-op
+    if (!ptr) return;
+    blk_t* b = (blk_t*)((uint8_t*)ptr - HDR);
+    if (b->magic != MAGIC || b->free) {
+        vga_print("kfree: bad/double free\n");
+        return;
+    }
+    b->free = 1;
+    g_used -= b->size;
+
+    // coalesce forward
+    while (b->next && b->next->free) {
+        b->size += HDR + b->next->size;
+        b->next = b->next->next;
+    }
+    // coalesce backward
+    for (blk_t* p = g_head; p && p != b; p = p->next) {
+        if (p->next == b && p->free) {
+            p->size += HDR + b->size;
+            p->next = b->next;
+            break;
+        }
+    }
 }
 
-size_t heap_bytes_used(void)  { return (size_t)(g_heap_brk - g_heap_start); }
-size_t heap_bytes_total(void) { return (size_t)(g_heap_end - g_heap_start); }
+size_t heap_bytes_used(void)  { return g_used; }
+size_t heap_bytes_total(void) { return g_heap_end - g_heap_start; }
