@@ -2,37 +2,44 @@
 
 A small, from-scratch 32-bit x86 (i686) operating system. It boots from GRUB, sets up its own
 descriptor tables, interrupts, paging and memory allocators, mounts a tar-based initrd behind a
-tiny VFS, loads ELF binaries into a ring 3 address space, and serves them a three-call syscall
-ABI through `int 0x80`. It has a kernel shell so you can poke at all of it.
+tiny VFS, and runs ELF binaries as preemptively scheduled ring 3 processes with private address
+spaces. Processes talk to the kernel through a seven-call syscall ABI on `int 0x80` (`fork`,
+`execve`, `waitpid`, `exit`, `read`, `write`, `getpid`), and the default boot drops you into a
+small user-space shell that is itself an ELF program. A kernel shell is still there for poking
+at the machine.
 
 ```
 Bobliu's kernel
-Kernel shell ready. Type 'help'.
-bobliu:/> exec /hello
+bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
+$ echo hi there
+hi there
+$ hello
 hello from userland!
-
-bobliu:/>
+...
 ```
 
-It is a hobby kernel: single process, single core, VGA text mode, PS/2 keyboard. It is built to
-learn how the pieces fit together, and it follows the
+It is a hobby kernel: single core, VGA text mode, PS/2 keyboard, at most 16 processes. It is
+built to learn how the pieces fit together, and it follows the
 [OSDev wiki "Creating an Operating System"](https://wiki.osdev.org/Creating_an_Operating_System)
 roadmap. The honest status of each phase is below.
 
 ## What works
 
-- **Multiboot 1 boot** via GRUB, with memory map and module (initrd) parsing
-- **GDT** with ring 0 and ring 3 code/data segments, plus a **TSS** for ring 3 to ring 0 stack switches
-- **IDT, ISRs and IRQs**: CPU exceptions 0-31 (reported and halted), remapped 8259 PIC (vectors 32-47), 100 Hz PIT timer, `int 0x80` as a user-callable gate
+- **Multiboot 1 boot** via GRUB, with memory map, command line (`init=`, `noshell`) and module (initrd) parsing
+- **GDT** with ring 0 and ring 3 code/data segments, plus a **TSS** whose `esp0` is switched per process
+- **IDT, ISRs and IRQs**: CPU exceptions 0-31, remapped 8259 PIC (vectors 32-47), 100 Hz PIT timer, `int 0x80` as a user-callable gate
 - **Physical memory manager**: bitmap frame allocator seeded from the multiboot memory map
-- **Paging**: identity map of the first 256 MiB, per-process directories cloned from the kernel one, page fault reporter
-- **Kernel heap**: bump allocator (`kmalloc`)
-- **PS/2 keyboard** driver (US layout, shift and caps lock) feeding a line editor
+- **Paging**: the first 256 MiB is identity-mapped and shared by every address space (PDEs 0..63); user space lives at `0x10000000..0x40000000` in per-process page tables
+- **Kernel heap**: first-fit free-list allocator with split and coalesce; `kfree` works and the heap's frames are reserved in the PMM
+- **Processes**: a 16-entry process table, a kmalloc'd kernel stack and page directory per process, `swtch()` context switching, a round-robin scheduler, and timer preemption of ring 3 code every 5 ticks (50 ms)
+- **fork / exec / waitpid / exit**: `fork` deep-copies the user pages (no copy-on-write), `execve` replaces the image and puts `argc`/`argv` on the new stack, exited processes become zombies until reaped, and a fault in ring 3 kills only that process
+- **PS/2 keyboard** driver (US layout, shift and caps lock) feeding a line editor; finished lines go to the kernel shell, or to the console (stdin) buffer while a user program is in the foreground
 - **initrd**: a ustar archive loaded as a GRUB module, exposed through a small **VFS** (open/read/close/stat/ls)
-- **ELF32 loader** mapping `PT_LOAD` segments into a fresh address space, with a 4-page user stack
-- **Syscalls**: `exit`, `write`, `getpid`, numbered like Linux i386
-- **A user-space toolchain slice**: `crt0.S`, a linker script, and an `i686-bobliu-gcc` wrapper
-- **Kernel shell** with filesystem navigation, memory inspection and `exec`
+- **ELF32 loader** (`cpu/user_exec.c`) that validates the image, maps `PT_LOAD` segments plus an 8-page stack into a fresh address space, and copies through the identity map
+- **Syscalls**: `exit`, `fork`, `read`, `write`, `waitpid`, `execve`, `getpid`, numbered like Linux i386
+- **A small libc and toolchain slice**: `libc.a` (stdio `printf`/`puts`, string, `unistd`, `sys/wait.h`, `exit`/`abort`), `crt0.S`, a linker script and an `i686-bobliu-gcc` wrapper
+- **User programs** in `user/` (`sh`, `hello`, `echo`, `forktest`, `crash`) built into `initrd/bin`
+- **Kernel shell** with filesystem navigation, memory inspection, `ps` and `exec`
 
 ## Status and roadmap
 
@@ -45,25 +52,29 @@ Mapped to the OSDev wiki phases. Status is based on what is in the tree, not on 
 | Bare bones | Done | `boot.S`, linker script, VGA terminal, global constructors |
 | Multiboot | Done | Multiboot 1; mmap, cmdline (`noshell`), modules |
 | GDT | Done | Null, kernel code/data, user code/data, TSS (selector `0x28`) |
-| Memory management | Done, basic | Bitmap PMM, identity paging, bump heap with no-op `kfree` |
+| Memory management | Done, basic | Bitmap PMM, identity paging for the kernel, free-list heap with a working `kfree` |
 | Interrupts | Done | Exceptions, remapped PIC, PIT, `int 0x80`; EOI sent first |
-| Keyboard | Done | Scancode set 1, US layout, shift/caps, line buffer; no extended keys |
+| Keyboard | Done | Scancode set 1, US layout, shift/caps, line buffer; no extended keys; lines routed to the shell or to stdin |
 | Filesystem | Done, read-only | tar initrd behind a VFS; no write support, no real disk driver |
 
 ### Phase II: user space
 
 | Item | Issue | Status | Notes |
 |---|---|---|---|
-| User space (ring 3) | #1 | Done | GDT/TSS, `iret` into ring 3, user-accessible pages |
-| Program loading | #2 | Done | ELF32 `PT_LOAD` loader reading from the VFS |
-| Syscall ABI | #3 | Done | `int 0x80`, Linux-style numbers; `exit`, `write`, `getpid` |
-| OS-specific toolchain | #4 | Done, minimal | `crt0.S`, `user.ld`, gcc wrapper; reuses `i686-elf-gcc`, no `i686-bobliu` target |
-| libc | #5 | Done | `libc.a` (printf/puts/string, write/getpid/exit via syscalls); no `read`, no `malloc` yet |
-| fork / exec | #6 | In progress | Shell-level `exec` works for one process at a time; no `fork`, no scheduler |
-| Userland shell | #7 | To do | The shell lives in the kernel; user programs cannot read input yet |
+| User space (ring 3) | #1 | Done | GDT/TSS, `iret` into ring 3, per-process page tables at `0x10000000..0x40000000` |
+| Program loading | #2 | Done | ELF32 loader in `cpu/user_exec.c`: validates headers, copies via the identity map |
+| Syscall ABI | #3 | Done | `int 0x80`, Linux-style numbers; `exit`, `fork`, `read`, `write`, `waitpid`, `execve`, `getpid` |
+| OS-specific toolchain | #4 | Done, minimal | `crt0.S` (passes `argc`/`argv`), `user.ld`, gcc wrapper; reuses `i686-elf-gcc`, no `i686-bobliu` target |
+| libc | #5 | Done | `libc.a`: stdio (`printf`, `puts`), string (incl. `strchr`), `unistd`, `sys/wait.h`, `exit`/`abort`; no `malloc` yet |
+| fork / exec | #6 | Done | Process table, round-robin scheduler, `swtch`, `fork` (deep copy), `execve`, `waitpid`, zombies |
+| Userland shell | #7 | Done | `user/sh.c`: reads a line, `fork` + `execv` from `/bin`, `waitpid` |
 
-Further out: a scheduler with multiple processes, a freeing heap allocator, a `read` syscall,
-a real VFS-backed file descriptor table per process, and a disk driver.
+Open issues:
+
+- **#8** file syscalls (`open`/`read`/`close`/`lseek`); `read` currently only works on fd 0
+- **#9** kernel-stack guard page and copy-on-write `fork`
+
+Further out: a per-process file descriptor table backed by the VFS, `malloc`/`brk`, a disk driver.
 
 ## Build and run
 
@@ -83,79 +94,116 @@ export PATH="$HOME/opt/cross/bin:$PATH"
 ./clean.sh    # remove build products
 ```
 
-`iso.sh` does the following: installs headers into `sysroot/`, builds `libk` and the kernel,
-assembles `toolchain/crt0.S`, compiles `initrd/hello.c` with `toolchain/i686-bobliu-gcc`, tars
-`initrd/` into `isodir/boot/initrd.tar`, writes a `grub.cfg`, and calls
-`i686-elf-grub-mkrescue`. The GRUB menu has two entries: `bobliu (shell)` and
-`bobliu (noshell)` (passes `noshell` on the kernel command line).
+`iso.sh` does the following: installs headers into `sysroot/`, builds `libc.a`, `libk.a` and the
+kernel, assembles `toolchain/crt0.S`, compiles every `user/*.c` with `toolchain/i686-bobliu-gcc`
+into `initrd/bin/` (gitignored), tars `initrd/` into `isodir/boot/initrd.tar`, writes a
+`grub.cfg`, and calls `i686-elf-grub-mkrescue`. The GRUB menu has three entries:
+
+| Entry | Kernel command line | Behavior |
+|---|---|---|
+| `bobliu (user shell)` (default) | `init=/bin/sh` | spawns `/bin/sh` as the first process; when it exits you fall back to the kernel shell |
+| `bobliu (kernel shell)` | (none) | kernel shell only |
+| `bobliu (noshell)` | `noshell` | no shell and keyboard input is ignored |
 
 `qemu.sh` runs with `-no-reboot -no-shutdown -d int,cpu_reset -D qemu.log`, so a triple fault
 stops the VM and the interrupt trace lands in `qemu.log`.
 
 Anything you put in `initrd/` ends up in the root of the filesystem. To add a user program,
-compile it with the wrapper and drop it there:
+drop a `.c` file in `user/` and re-run `./iso.sh`; it shows up as `/bin/<name>`. To build one by
+hand:
 
 ```sh
-./toolchain/i686-bobliu-gcc -O2 -o initrd/myprog initrd/myprog.c
+./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/myprog user/myprog.c
 ```
+
+## User programs
+
+| Program | What it does |
+|---|---|
+| `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Built-in: `exit` |
+| `hello` | Prints a greeting, its pid and some libc output |
+| `echo` | Prints its arguments |
+| `forktest` | `fork` + `waitpid` exit status, `fork` + `execv`, then 40 short-lived children to check that memory comes back |
+| `crash` | Checks that bad syscall arguments are rejected, a failed `execv` returns, and a NULL write kills only this process |
 
 ## Shell reference
 
-Commands are split on spaces (no quoting) and the line buffer is 128 characters. Paths may be
-absolute or relative to the working directory; `.` and `..` are resolved.
+There are two shells.
+
+**User shell** (`/bin/sh`, default GRUB entry): see the table above. Type `exit` to leave it,
+after which the kernel prints `[init exited]` and the kernel shell starts.
+
+**Kernel shell**: runs from the kernel main loop (`shell_poll`), not inside the keyboard IRQ, so
+commands such as `exec` can block. Commands are split on spaces (no quoting, up to 16 tokens)
+and the line buffer is 128 characters. Paths may be absolute or relative to the working
+directory; `.` and `..` are resolved. While the kernel shell is waiting for a program started
+with `exec`, keyboard lines go to that program's stdin instead.
 
 | Command | Description |
 |---|---|
-| `help` | List commands (the built-in text omits `uptime` and `exec`) |
+| `help` | List commands (the built-in text omits `uptime`) |
 | `clear` | Clear the screen |
 | `echo <text...>` | Print arguments separated by single spaces |
 | `ticks` | Raw PIT tick count (100 Hz) |
 | `uptime` | Seconds since boot (`ticks / 100`) |
 | `mem` | Physical frame totals: total, free, used, in frames and KiB |
-| `alloc <bytes>` | Call `kmalloc` and print the pointer and heap usage (leaks by design) |
+| `alloc <bytes>` | Call `kmalloc` and print the pointer and heap usage (the block is never freed) |
 | `pwd` | Print the working directory |
 | `cd [path]` | Change directory (default `/`) |
 | `ls [path]` | List a directory |
 | `cat <path>` | Print a file |
 | `hexdump <path>` | Hex plus ASCII dump, 16 bytes per row |
-| `exec <path>` | Load an ELF from the VFS and run it in ring 3 |
+| `exec <path> [args...]` | Load an ELF from the VFS, run it as a process with the given arguments, and wait for it (prints `[pid N exited with S]` for a nonzero status) |
+| `ps` | List processes: pid, parent pid, state, name |
 | `panic` | Execute `ud2` to trigger an invalid-opcode exception dump |
 
 ## Example session
 
-```
-bobliu:/> ls
-hello
-hello.c
-hello.txt
-readme.txt
-setup.txt
-dir
-bobliu:/> cd dir
-bobliu:/dir> ls
-note.txt
-bobliu:/dir> cat note.txt
-cole is hot.
-bobliu:/dir> cd /
-bobliu:/> mem
-frames: total=... free=... used=...
-bobliu:/> exec /hello
-hello from userland!
+Booting the default "user shell" entry:
 
+```
+Bobliu's kernel
+bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
+$ echo hello world
+hello world
+$ hello
+hello from userland!
+pid=3 strlen=6 hex=beef str=libc works
+$ forktest
+parent pid=4
+child  pid=5 (fork returned 0)
+parent: reaped 5, exit status 7
+...
+40 forks ok
+$ nope
+sh: nope: not found
+[exit 127]
+$ exit
+[init exited]
+Kernel shell ready. Type 'help'.
+bobliu:/> ps
+PID PPID STATE    NAME
+0   0    running  kernel
+bobliu:/> exec /bin/echo back in the kernel shell
+back in the kernel shell
 bobliu:/>
 ```
 
-`ls` prints one name per line. The listing shown is illustrative; it and the numbers from `mem` depend on your build and QEMU memory size.
+The exact pids, the middle of the `forktest` output and the listings depend on your build;
+pids are never reused within a boot.
 
 ## Repository layout
 
 ```
-boot / kernel   kernel/arch/i386/   boot.S, linker.ld, cpu/ mm/ dev/ fs/ elf/ tss/ shell/ ...
+boot / kernel   kernel/arch/i386/   boot.S, swtch.S, isr_stubs.S, linker.ld,
+                                    cpu/ (gdt idt isr proc user_exec) mm/ (pmm paging heap syscall)
+                                    dev/ (console keyboard timer pic vga) fs/ shell/ tss/ interrupts/ ...
                 kernel/kernel/      kernel.c (kernel_main)
-                kernel/include/     kernel headers, including kernel/syscall.h (shared with user code)
-libc            libc/               libk (kernel) and libc.a (user space)
+                kernel/include/     kernel headers; kernel/syscall.h is shared with user code
+libc            libc/               libk.a (kernel) and libc.a (user space), headers in libc/include
+user programs   user/               sh, hello, echo, forktest, crash (built into initrd/bin)
 toolchain       toolchain/          crt0.S, user.ld, i686-bobliu-gcc, build.sh
-initrd          initrd/             files packed into the tar module
+initrd          initrd/             files packed into the tar module (initrd/bin is generated)
 scripts         iso.sh qemu.sh build.sh headers.sh config.sh clean.sh
 docs            docs/architecture.md
 ```
@@ -163,12 +211,13 @@ docs            docs/architecture.md
 ## Documentation
 
 [docs/architecture.md](docs/architecture.md) covers the boot flow, memory layout, interrupt
-path, the ring 0/ring 3 transition and exec/exit mechanism, the syscall ABI, the VFS, and the
-build pipeline, with diagrams, plus a list of known limitations.
+path, the process model (fork/exec/wait/exit and the scheduler), the syscall ABI, the VFS, the
+build pipeline and the shells, with diagrams, plus a list of known limitations.
 
 ## Known limitations
 
-The short version (details in the architecture doc): one user process at a time, no scheduler,
-`exec` returns to the shell by resetting the kernel stack rather than unwinding it, the heap
-never frees, user pages are placed inside the identity-mapped region, and the user ABI has no
-input path yet.
+The short version (details in the architecture doc): `fork` copies every page (no
+copy-on-write), kernel stacks have no guard page, there are no file syscalls (`read` only
+serves stdin), at most 16 processes and 16 arguments of 128 bytes, `envp` is ignored, stdin is
+one global console buffer, blocking happens only in `waitpid` and `read`, and some dead code
+(for example `kernel/arch/i386/elf/elf.c`) is still compiled in.
