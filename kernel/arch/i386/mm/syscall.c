@@ -5,6 +5,8 @@
 #include <kernel/syscall.h>
 #include <kernel/proc.h>
 
+int console_read(char* dst, int max);
+
 extern int putchar(int);
 
 // user buffer must sit entirely inside the user region
@@ -60,11 +62,32 @@ void syscall_handle(regs_t* r) {
         r->eax = (uint32_t)ret;
         return;
     }
+    case SYS_read: {
+        // only stdin (the console) for now
+        if (r->ebx != 0 || !user_range_ok(r->ecx, r->edx)) { r->eax = (uint32_t)-1; return; }
+        r->eax = (uint32_t)console_read((char*)r->ecx, (int)r->edx);
+        return;
+    }
     case SYS_execve: {
-        char path[128];
+        char path[PROC_ARG_LEN];
+        char args[PROC_MAX_ARGS][PROC_ARG_LEN];
+        char* argv[PROC_MAX_ARGS];
+        int argc = 0;
         if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
+
+        if (r->ecx) {
+            for (; argc < PROC_MAX_ARGS; argc++) {
+                if (!user_range_ok(r->ecx + 4u * (uint32_t)argc, 4)) { r->eax = (uint32_t)-1; return; }
+                uint32_t up = ((uint32_t*)r->ecx)[argc];
+                if (!up) break;
+                if (copy_user_str(args[argc], up, PROC_ARG_LEN) < 0) { r->eax = (uint32_t)-1; return; }
+                argv[argc] = args[argc];
+            }
+        }
+        if (argc == 0) { memcpy(args[0], path, sizeof(path)); argv[0] = args[0]; argc = 1; }
+
         // on success proc_exec rewrites the trap frame (eip/esp) and eax stays 0
-        r->eax = (uint32_t)proc_exec(path, r);
+        r->eax = (uint32_t)proc_exec(path, argv, argc, r);
         return;
     }
     case SYS_getpid:

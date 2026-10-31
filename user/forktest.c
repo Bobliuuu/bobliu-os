@@ -18,8 +18,8 @@ int main(void) {
 
     pid = fork();
     if (pid == 0) {
-        char* args[] = { "/hello", 0 };
-        execv("/hello", args);
+        char* args[] = { "/bin/hello", 0 };
+        execv("/bin/hello", args);
         printf("exec failed\n");
         exit(1);
     }

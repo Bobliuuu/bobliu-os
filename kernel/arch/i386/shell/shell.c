@@ -365,7 +365,7 @@ static int cmd_exec(int argc, char** argv) {
     char path[256];
     shell_canon_path(path, g_cwd, argv[1]);
 
-    int pid = proc_spawn(path);
+    int pid = proc_spawn(path, argv + 1, argc - 1);
     if (pid < 0) {
         printf("exec: failed: %s\n", path);
         return -1;
@@ -430,7 +430,11 @@ void shell_on_line(const char* line_in) {
 static char g_pending[128];
 static volatile int g_pending_set = 0;
 
+void console_push_line(const char* line);
+
 void shell_submit(const char* line) {
+    // a user program is running in the foreground: the line is its stdin
+    if (proc_kernel_busy()) { console_push_line(line); return; }
     if (g_pending_set) return;          // still busy with the last one
     size_t n = strlen(line);
     if (n >= sizeof(g_pending)) n = sizeof(g_pending) - 1;

@@ -10,7 +10,7 @@ typedef enum {
     PROC_UNUSED = 0,
     PROC_RUNNABLE,
     PROC_RUNNING,
-    PROC_SLEEPING,   // blocked in waitpid
+    PROC_SLEEPING,   // blocked: waitpid (chan 0) or console input (chan 1)
     PROC_ZOMBIE      // exited, waiting for the parent to reap
 } proc_state_t;
 
@@ -24,6 +24,7 @@ typedef struct proc {
     proc_state_t   state;
     struct proc*   parent;
     int            exit_code;
+    int            chan;        // what a SLEEPING proc waits for
     page_directory_t pd;
     uint8_t*       kstack;      // 0 for the boot/kernel context (pid 0)
     struct context* ctx;        // saved kernel context while not running
@@ -33,15 +34,23 @@ typedef struct proc {
 
 void    proc_init(void);
 proc_t* proc_current(void);
-int     proc_spawn(const char* path);               // new process running path; returns pid or -1
+#define PROC_MAX_ARGS 16
+#define PROC_ARG_LEN  128
+#define WAIT_CHILD   0
+#define WAIT_CONSOLE 1
+
+int     proc_spawn(const char* path, char** argv, int argc);   // returns pid or -1
 int     proc_fork(regs_t* tf);                      // child pid to parent, child resumes with 0
-int     proc_exec(const char* path, regs_t* tf);    // replace current image; 0 or -1
+int     proc_exec(const char* path, char** argv, int argc, regs_t* tf);  // replace image; 0 or -1
 int     proc_wait(int pid, int* status);            // pid, -1 if nothing to wait for
 __attribute__((noreturn)) void proc_exit(int code);
 void    proc_yield(void);
+void    proc_sleep_on(int chan);                    // irqs must be off; returns once woken
+void    proc_wakeup(int chan);
+int     proc_kernel_busy(void);                     // kernel context is blocked waiting on a child
 void    proc_reap_orphans(void);                    // kernel context: reap zombies nobody waits for
 int     proc_count(void);
 void    proc_dump(void);                            // for the shell's ps
 
 // user_exec.c: build a fresh address space for path
-int user_load(const char* path, page_directory_t* out_pd, uint32_t* entry);
+int user_load(const char* path, char** argv, int argc, page_directory_t* out_pd, uint32_t* entry, uint32_t* sp);

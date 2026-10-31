@@ -123,11 +123,29 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 		enable_shell = false;
 	}
 
+	keyboard_enable_shell(enable_shell);
+
+	// init=/path boots straight into a user program (the user shell); when it
+	// exits we fall back to the kernel shell
+	const char* init = cmdline_has(boot_cmdline, "init=") ? strstr(boot_cmdline, "init=") + 5 : NULL;
+	if (init && enable_shell) {
+		char path[64];
+		size_t n = 0;
+		while (init[n] && init[n] != ' ' && n < sizeof(path) - 1) { path[n] = init[n]; n++; }
+		path[n] = '\0';
+		char* args[1] = { path };
+		int pid = proc_spawn(path, args, 1);
+		if (pid > 0) {
+			proc_wait(pid, NULL);
+			printf("[init exited]\n");
+		} else {
+			printf("init: cannot run %s\n", path);
+		}
+	}
+
     if (enable_shell) {
         shell_init();
     }
-
-	keyboard_enable_shell(enable_shell);
 
     // kernel context (pid 0): run shell lines queued by the keyboard irq
     for (;;) {

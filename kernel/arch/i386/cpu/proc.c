@@ -6,6 +6,7 @@
 #include <kernel/heap.h>
 #include <arch/i386/paging.h>
 #include <arch/i386/tss.h>
+#include <arch/i386/irq.h>
 
 extern void swtch(struct context** old, struct context* new);
 extern void trapret(void);
@@ -15,15 +16,6 @@ static proc_t* g_cur = 0;
 static int g_next_pid = 1;
 
 #define KERNEL_PROC (&g_procs[0])
-
-static inline uint32_t irq_save(void) {
-    uint32_t f;
-    __asm__ volatile("pushfl; popl %0; cli" : "=r"(f) :: "memory");
-    return f;
-}
-static inline void irq_restore(uint32_t f) {
-    __asm__ volatile("pushl %0; popfl" :: "r"(f) : "memory", "cc");
-}
 
 void proc_init(void) {
     memset(g_procs, 0, sizeof(g_procs));
@@ -91,6 +83,12 @@ static void sched(void) {
         __asm__ volatile("sti; hlt; cli");
     }
 
+    if (nxt == old) {           // e.g. woken from sleep and nothing else is runnable
+        old->state = PROC_RUNNING;
+        irq_restore(fl);
+        return;
+    }
+
     if (old->state == PROC_RUNNING) old->state = PROC_RUNNABLE;
     nxt->state = PROC_RUNNING;
     g_cur = nxt;
@@ -108,26 +106,26 @@ void proc_yield(void) {
     sched();
 }
 
-static void setup_user_frame(regs_t* tf, uint32_t entry) {
+static void setup_user_frame(regs_t* tf, uint32_t entry, uint32_t sp) {
     memset(tf, 0, sizeof(*tf));
     tf->ds = 0x23;
     tf->cs = 0x1B;
     tf->ss = 0x23;
     tf->eip = entry;
-    tf->useresp = USER_STACK_TOP;
+    tf->useresp = sp;
     tf->eflags = 0x202;      // IF=1
 }
 
-int proc_spawn(const char* path) {
+int proc_spawn(const char* path, char** argv, int argc) {
     page_directory_t pd;
-    uint32_t entry;
-    if (user_load(path, &pd, &entry) < 0) return -1;
+    uint32_t entry, sp;
+    if (user_load(path, argv, argc, &pd, &entry, &sp) < 0) return -1;
 
     proc_t* p = proc_alloc();
     if (!p) { paging_free_user(pd, 1); return -1; }
 
     p->pd = pd;
-    setup_user_frame(p->tf, entry);
+    setup_user_frame(p->tf, entry, sp);
     strncpy(p->name, path, sizeof(p->name) - 1);
 
     uint32_t fl = irq_save();
@@ -154,10 +152,10 @@ int proc_fork(regs_t* tf) {
     return c->pid;
 }
 
-int proc_exec(const char* path, regs_t* tf) {
+int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
     page_directory_t npd;
-    uint32_t entry;
-    if (user_load(path, &npd, &entry) < 0) return -1;
+    uint32_t entry, sp;
+    if (user_load(path, argv, argc, &npd, &entry, &sp) < 0) return -1;
 
     proc_t* p = g_cur;
     page_directory_t old = p->pd;
@@ -167,7 +165,7 @@ int proc_exec(const char* path, regs_t* tf) {
     paging_free_user(old, 1);
 
     uint32_t eflags = tf->eflags;
-    setup_user_frame(tf, entry);
+    setup_user_frame(tf, entry, sp);
     tf->eflags = eflags | 0x200;
     strncpy(p->name, path, sizeof(p->name) - 1);
     return 0;
@@ -193,7 +191,8 @@ void proc_exit(int code) {
 
     p->exit_code = code;
     p->state = PROC_ZOMBIE;
-    if (p->parent && p->parent->state == PROC_SLEEPING) p->parent->state = PROC_RUNNABLE;
+    if (p->parent && p->parent->state == PROC_SLEEPING && p->parent->chan == WAIT_CHILD)
+        p->parent->state = PROC_RUNNABLE;
 
     sched();
     (void)fl;
@@ -222,10 +221,28 @@ int proc_wait(int pid, int* status) {
         if (!have_child) return -1;
 
         uint32_t fl = irq_save();
+        me->chan = WAIT_CHILD;
         me->state = PROC_SLEEPING;
         sched();
         irq_restore(fl);
     }
+}
+
+void proc_sleep_on(int chan) {
+    g_cur->chan = chan;
+    g_cur->state = PROC_SLEEPING;
+    sched();
+}
+
+void proc_wakeup(int chan) {
+    for (int i = 0; i < NPROC; i++) {
+        proc_t* p = &g_procs[i];
+        if (p->state == PROC_SLEEPING && p->chan == chan) p->state = PROC_RUNNABLE;
+    }
+}
+
+int proc_kernel_busy(void) {
+    return KERNEL_PROC->state == PROC_SLEEPING;
 }
 
 void proc_reap_orphans(void) {

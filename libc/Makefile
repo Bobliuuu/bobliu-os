@@ -40,6 +40,7 @@ string/memmove.o \
 string/memset.o \
 string/strlen.o \
 string/strcmp.o \
+string/strchr.o \
 string/strstr.o \
 string/strcpy.o \
 string/strncmp.o \
@@ -48,6 +49,7 @@ string/strncpy.o \
 HOSTEDOBJS=\
 $(ARCH_HOSTEDOBJS) \
 unistd/write.o \
+unistd/read.o \
 unistd/getpid.o \
 unistd/fork.o \
 unistd/exec.o \

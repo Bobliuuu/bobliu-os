@@ -4,8 +4,10 @@ set -e
 
 # user programs, built with the bobliu toolchain wrapper
 ./toolchain/build.sh
-for prog in hello forktest crash; do
-  ./toolchain/i686-bobliu-gcc -O2 -o initrd/$prog initrd/$prog.c
+mkdir -p initrd/bin
+for src in user/*.c; do
+  prog=$(basename $src .c)
+  ./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/$prog $src
 done
 
 mkdir -p isodir
@@ -15,7 +17,11 @@ mkdir -p isodir/boot/grub
 cp sysroot/boot/myos.kernel isodir/boot/myos.kernel
 COPYFILE_DISABLE=1 tar --no-xattrs --exclude=._* -C initrd -cf isodir/boot/initrd.tar .
 cat > isodir/boot/grub/grub.cfg << EOF
-menuentry "bobliu (shell)" {
+menuentry "bobliu (user shell)" {
+    multiboot /boot/myos.kernel init=/bin/sh
+    module   /boot/initrd.tar initrd
+}
+menuentry "bobliu (kernel shell)" {
     multiboot /boot/myos.kernel
     module   /boot/initrd.tar initrd
 }

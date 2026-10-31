@@ -35,7 +35,7 @@ static void copy_to_dir(page_directory_t dir, uint32_t va, const uint8_t* src, u
     }
 }
 
-int user_load(const char* path, page_directory_t* out_pd, uint32_t* entry) {
+int user_load(const char* path, char** argv, int argc, page_directory_t* out_pd, uint32_t* entry, uint32_t* out_sp) {
     vfs_stat_t st;
     if (vfs_stat(path, &st) < 0 || st.is_dir || st.size < sizeof(Elf32_Ehdr) || st.size > MAX_ELF)
         return -1;
@@ -90,11 +90,33 @@ int user_load(const char* path, page_directory_t* out_pd, uint32_t* entry) {
     uint32_t ent = E->e_entry;
     kfree(img);
 
+    // initial stack: [argc][argv0..argvN][NULL] ... strings (crt0 hands these to main)
+    uint32_t sp = USER_STACK_TOP;
+    if (ok) {
+        uint32_t uptr[PROC_MAX_ARGS];
+        if (argc > PROC_MAX_ARGS) argc = PROC_MAX_ARGS;
+        for (int i = argc - 1; i >= 0; i--) {
+            uint32_t len = (uint32_t)strlen(argv[i]) + 1;
+            sp -= len;
+            copy_to_dir(dir, sp, (const uint8_t*)argv[i], len);
+            uptr[i] = sp;
+        }
+        sp &= ~15u;
+        sp -= 4 * (uint32_t)(argc + 1);
+        for (int i = 0; i < argc; i++) copy_to_dir(dir, sp + 4 * (uint32_t)i, (const uint8_t*)&uptr[i], 4);
+        uint32_t zero = 0;
+        copy_to_dir(dir, sp + 4 * (uint32_t)argc, (const uint8_t*)&zero, 4);
+        sp -= 4;
+        uint32_t n = (uint32_t)argc;
+        copy_to_dir(dir, sp, (const uint8_t*)&n, 4);
+    }
+
     if (!ok || ent < USER_LO || ent >= USER_HI) {
         paging_free_user(dir, 1);
         return -1;
     }
     *out_pd = dir;
     *entry = ent;
+    *out_sp = sp;
     return 0;
 }
