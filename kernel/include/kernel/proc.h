@@ -5,7 +5,7 @@
 
 #define NPROC       16
 #define PROC_MAXFD  16   /* user fds 0-2 are the console, 3+ map to vfs fds */
-#define KSTACK_SIZE 16384
+#define KSTACK_SIZE KSTACK_BYTES   /* see arch/i386/paging.h */
 
 typedef enum {
     PROC_UNUSED = 0,

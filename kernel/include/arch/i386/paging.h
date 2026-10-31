@@ -22,6 +22,13 @@
 #define USER_STACK_TOP  USER_HI
 #define USER_STACK_PAGES 8u
 
+/* per-process kernel stacks live in their own shared region, each with an
+   unmapped guard page below it (overflow faults instead of corrupting the heap) */
+#define KSTACK_BASE     0xE0000000u
+#define KSTACK_PDE      (KSTACK_BASE >> 22)
+#define KSTACK_BYTES    16384u
+#define KSTACK_SLOTS    64u
+
 typedef struct page_directory {
     uint32_t* pd_phys;   // physical address of page directory
     uint32_t* pd_virt;   // virtual pointer to same thing (identity mapped for now)
@@ -45,6 +52,10 @@ uint32_t paging_translate_in(page_directory_t dir, uint32_t vaddr);
 page_directory_t paging_clone_directory(page_directory_t src);
 
 uint32_t* paging_current_pd_virt(void);
+
+/* returns the lowest usable address of the stack (top = ret + KSTACK_BYTES), 0 on OOM */
+uint32_t kstack_alloc(uint32_t slot);
+void     kstack_free(uint32_t slot);
 
 /* switch cr3 only; g_pd (kernel dir used by paging_map) is left alone */
 void paging_load(page_directory_t dir);

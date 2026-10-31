@@ -36,7 +36,7 @@ static proc_t* proc_alloc(void) {
         proc_t* p = &g_procs[i];
         if (p->state != PROC_UNUSED) continue;
 
-        uint8_t* ks = (uint8_t*)kmalloc(KSTACK_SIZE);
+        uint8_t* ks = (uint8_t*)kstack_alloc((uint32_t)i);
         if (!ks) return 0;
 
         memset(p, 0, sizeof(*p));
@@ -58,7 +58,7 @@ static proc_t* proc_alloc(void) {
 }
 
 static void proc_release(proc_t* p) {
-    kfree(p->kstack);
+    kstack_free((uint32_t)(p - g_procs));
     p->kstack = 0;
     p->state = PROC_UNUSED;
     p->pid = 0;

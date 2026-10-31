@@ -73,6 +73,11 @@ void page_fault_handler(regs_t* r) {
         proc_exit(139);
     }
 
+    if (cr2 >= KSTACK_BASE && cr2 < KSTACK_BASE + KSTACK_SLOTS * (KSTACK_BYTES + PAGE_SIZE) &&
+        ((cr2 - KSTACK_BASE) % (KSTACK_BYTES + PAGE_SIZE)) < PAGE_SIZE) {
+        vga_print("\nKERNEL STACK OVERFLOW (guard page hit)\n");
+    }
+
     vga_print("\nPAGE FAULT: cr2=");
     vga_print_hex(cr2);
     vga_print(" eip=");

@@ -48,6 +48,9 @@ void paging_init_identity(void) {
         g_pd[pde] = ((uint32_t)pt & 0xFFFFF000u) | P_PRESENT | P_RW;
     }
 
+    // page table for the kernel stack region; shared by all directories
+    g_pd[KSTACK_PDE] = ((uint32_t)alloc_table() & 0xFFFFF000u) | P_PRESENT | P_RW;
+
     vga_print("paging: enable cr3=");
     vga_print_hex((uint32_t)g_pd);
     vga_print("\n");
@@ -234,6 +237,7 @@ page_directory_t paging_clone_directory(page_directory_t src) {
     for (uint32_t pdi = KERNEL_PDE_END; pdi < 1024; pdi++) {
         out.pd_virt[pdi] = 0;
     }
+    out.pd_virt[KSTACK_PDE] = src.pd_virt[KSTACK_PDE];
     return out;
 }
 
@@ -245,6 +249,7 @@ uint32_t* paging_current_pd_virt(void) {
 
 void paging_free_user(page_directory_t dir, int free_pd) {
     for (uint32_t pdi = KERNEL_PDE_END; pdi < PDE_COUNT; pdi++) {
+        if (pdi == KSTACK_PDE) continue;      // kernel stacks, shared
         uint32_t pde = dir.pd_virt[pdi];
         if (!(pde & P_PRESENT)) continue;
         uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
@@ -261,6 +266,7 @@ page_directory_t paging_clone_user(page_directory_t src) {
     page_directory_t out = paging_clone_directory(src);
 
     for (uint32_t pdi = KERNEL_PDE_END; pdi < PDE_COUNT; pdi++) {
+        if (pdi == KSTACK_PDE) continue;
         uint32_t pde = src.pd_virt[pdi];
         if (!(pde & P_PRESENT)) continue;
         uint32_t* spt = (uint32_t*)(pde & 0xFFFFF000u);
@@ -280,4 +286,34 @@ page_directory_t paging_clone_user(page_directory_t src) {
         }
     }
     return out;
+}
+
+
+// slot layout: [guard page (unmapped)][KSTACK_BYTES of stack]
+static uint32_t kstack_guard(uint32_t slot) {
+    return KSTACK_BASE + slot * (KSTACK_BYTES + PAGE_SIZE);
+}
+
+uint32_t kstack_alloc(uint32_t slot) {
+    if (slot >= KSTACK_SLOTS) return 0;
+    uint32_t lo = kstack_guard(slot) + PAGE_SIZE;
+    for (uint32_t off = 0; off < KSTACK_BYTES; off += PAGE_SIZE) {
+        uintptr_t f = pmm_alloc_frame();
+        if (!f || paging_map(lo + off, f, P_PRESENT | P_RW) < 0) {
+            if (f) pmm_free_frame(f);
+            kstack_free(slot);
+            return 0;
+        }
+    }
+    return lo;
+}
+
+void kstack_free(uint32_t slot) {
+    uint32_t lo = kstack_guard(slot) + PAGE_SIZE;
+    for (uint32_t off = 0; off < KSTACK_BYTES; off += PAGE_SIZE) {
+        uint32_t phys = paging_translate(lo + off);
+        if (!phys) continue;
+        paging_unmap(lo + off);
+        pmm_free_frame(phys & 0xFFFFF000u);
+    }
 }
