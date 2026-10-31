@@ -1,9 +1,9 @@
-#include <kernel/syscall.h>
-
-static int len(const char* s) { int n = 0; while (s[n]) n++; return n; }
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 int main(void) {
-    const char* msg = "hello from userland!\n";
-    __syscall3(SYS_write, 1, (int)msg, len(msg));
+    puts("hello from userland!");
+    printf("pid=%d strlen=%d hex=%x str=%s\n", getpid(), (int)strlen("bobliu"), 0xBEEF, "libc works");
     return 0;
 }

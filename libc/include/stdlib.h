@@ -9,6 +9,8 @@ extern "C" {
 
 __attribute__((__noreturn__))
 void abort(void);
+__attribute__((__noreturn__))
+void exit(int status);
 
 #ifdef __cplusplus
 }
