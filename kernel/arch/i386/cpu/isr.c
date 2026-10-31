@@ -79,18 +79,15 @@ void irq_install_handler(int irq, irq_fn fn) { irq_routines[irq] = fn; }
 void irq_uninstall_handler(int irq) { irq_routines[irq] = 0; }
 
 void irq_handler(regs_t* r) {
-    //erminal_putchar('Q');
     int irq = (int)r->int_no - 32;
+
+    // EOI first: a handler (e.g. the shell running exec from the keyboard
+    // irq) may never return here, which would leave the PIC stuck in-service.
+    pic_send_eoi(r->int_no);
 
     if (irq >= 0 && irq < 16 && irq_routines[irq]) {
         irq_routines[irq](r);
     }
-
-    // Send EOI
-    //if (r->int_no >= 40) outb(0xA0, 0x20);
-    //outb(0x20, 0x20);
-
-    pic_send_eoi(r->int_no);
 }
 
 void isr128_handler(regs_t* r) {
@@ -103,11 +100,6 @@ void isr128_handler(regs_t* r) {
 
     // syscall 2 => print string at user pointer EBX (unsafe!!!) -> need copy + validation
     if (r->eax == 2) { // exit(code)
-        printf("\n[proc exited]\n");
-        printf("exit: useresp=%x saved_kesp=%x resume=%x\n",
-            (uint32_t)r->useresp, (uint32_t)g_exec_kesp, (uint32_t)g_exec_resume_eip);
-        printf("IRET frame: eip=%x cs=%x eflags=%x esp=%x ss=%x\n",
-            dbg_iret_eip, dbg_iret_cs, dbg_iret_eflags, dbg_iret_esp, dbg_iret_ss);
         g_user_exited = 1;
         return;
     }

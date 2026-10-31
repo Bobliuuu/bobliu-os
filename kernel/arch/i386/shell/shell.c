@@ -26,7 +26,6 @@ extern void keyboard_enable_shell(bool enable);
 extern void keyboard_irq(regs_t* r);
 
 extern void irq_install_handler(int irq, void (*fn)(regs_t*));
-static void irq1_scream(regs_t* r) { (void)r; putchar('K'); }
 
 static inline uint32_t read_cr3(void) {
     uint32_t val;
@@ -419,14 +418,10 @@ void shell_on_line(const char* line_in) {
 
 __attribute__((noreturn))
 void exec_return_to_shell(void) {
-    printf("cr3=%x (saved kcr3=%x)\n", read_cr3(), g_exec_kcr3);
-    ps2_enable_irq1_only();
-    pic_unmask_irq1();
     keyboard_enable_shell(true);
     printf("\n");
     shell_prompt_public();
 
-    irq_install_handler(1, irq1_scream);
     __asm__ volatile("sti");          // <<< ADD THIS
     for (;;) {
         //if (inb(0x64) & 1) {      // output buffer full

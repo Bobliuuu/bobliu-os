@@ -180,7 +180,6 @@ void keyboard_init(void) {
 
 void keyboard_enable_shell(bool on) {
     shell_enabled = on;
-    printf("done\n");
     if (on) line_reset();
 }
 

@@ -7,7 +7,7 @@ mkdir -p isodir/boot
 mkdir -p isodir/boot/grub
 
 cp sysroot/boot/myos.kernel isodir/boot/myos.kernel
-tar -C initrd -cf isodir/boot/initrd.tar .
+COPYFILE_DISABLE=1 tar --no-xattrs --exclude=._* -C initrd -cf isodir/boot/initrd.tar .
 cat > isodir/boot/grub/grub.cfg << EOF
 menuentry "bobliu (shell)" {
     multiboot /boot/myos.kernel

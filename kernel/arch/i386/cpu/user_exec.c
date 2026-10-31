@@ -147,13 +147,10 @@ static int elf_load_image(const char* path, page_directory_t dir, user_image_t* 
 
     kfree(img);
 
-    printf("[elf] entry=%x user_stack_top=%x pages=%u\n",
-       out->entry, out->user_stack_top, (unsigned)USER_STACK_PAGES);
     return 0;
 }
 
 int user_exec(const char* path) {
-    printf("user_exec: path='%s'\n", path);
 
     page_directory_t kdir = paging_kernel_directory();
     page_directory_t pdir = paging_clone_directory(kdir);

@@ -44,10 +44,8 @@ static inline uint32_t read_eflags(void) {
 
 void pic_unmask_irq1(void) {
     uint8_t mask = inb(0x21);      // master PIC mask
-    printf("picmask(before)=%x\n", mask);
     mask &= ~(1 << 1);             // clear bit 1 = IRQ1
     outb(0x21, mask);
-    printf("picmas(after)=%x\n", inb(0x21));
 }
 
 void exec_resumed_debug(void) {
