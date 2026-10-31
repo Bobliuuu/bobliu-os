@@ -59,6 +59,7 @@ void paging_init_identity(void) {
 
     uint32_t cr0 = read_cr0();
     cr0 |= 0x80000000u; // PG
+    cr0 |= 0x00010000u; // WP: ring 0 honours read-only pages too (needed for cow)
     write_cr0(cr0);
 
     vga_print("paging: enabled\n");
@@ -274,20 +275,49 @@ page_directory_t paging_clone_user(page_directory_t src) {
         out.pd_virt[pdi] = ((uint32_t)dpt) | (pde & 0xFFFu);   // table now owned by out
 
         for (uint32_t i = 0; i < PTE_COUNT; i++) {
-            if (!(spt[i] & P_PRESENT)) continue;
-            uintptr_t f = pmm_alloc_frame();
-            if (!f) {
-                paging_free_user(out, 1);
-                out.pd_phys = 0; out.pd_virt = 0;
-                return out;
+            uint32_t pte = spt[i];
+            if (!(pte & P_PRESENT)) continue;
+
+            // writable pages become read-only+cow in BOTH address spaces
+            if (pte & P_RW) {
+                pte = (pte & ~P_RW) | P_COW;
+                spt[i] = pte;
             }
-            memcpy32((void*)f, (void*)(spt[i] & 0xFFFFF000u), PAGE_SIZE);
-            dpt[i] = f | (spt[i] & 0xFFFu);
+            dpt[i] = pte;
+            pmm_ref_inc(pte & 0xFFFFF000u);
         }
     }
+
+    // parent's ptes changed: flush its tlb
+    uint32_t cr3;
+    asm volatile("mov %%cr3, %0; mov %0, %%cr3" : "=r"(cr3) :: "memory");
     return out;
 }
 
+int paging_handle_cow(uint32_t vaddr) {
+    uint32_t* pd = paging_current_pd_virt();
+    uint32_t pde = pd[pde_index(vaddr)];
+    if (!(pde & P_PRESENT)) return 0;
+
+    uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
+    uint32_t pti = pte_index(vaddr);
+    uint32_t pte = pt[pti];
+    if (!(pte & P_PRESENT) || (pte & P_RW) || !(pte & P_COW)) return 0;
+
+    uint32_t frame = pte & 0xFFFFF000u;
+    if (pmm_ref(frame) == 1) {
+        // last owner: no copy needed
+        pt[pti] = (pte | P_RW) & ~P_COW;
+    } else {
+        uintptr_t nf = pmm_alloc_frame();
+        if (!nf) return 0;
+        memcpy32((void*)nf, (void*)frame, PAGE_SIZE);
+        pmm_free_frame(frame);                 // drop our share of the old frame
+        pt[pti] = (nf & 0xFFFFF000u) | ((pte & 0xFFFu) | P_RW) & ~P_COW;
+    }
+    asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    return 1;
+}
 
 // slot layout: [guard page (unmapped)][KSTACK_BYTES of stack]
 static uint32_t kstack_guard(uint32_t slot) {

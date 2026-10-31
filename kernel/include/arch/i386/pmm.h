@@ -7,6 +7,8 @@ void pmm_init(uint32_t multiboot_magic, uintptr_t multiboot_info_phys);
 
 uintptr_t pmm_alloc_frame(void);          /* returns physical address, 0 on OOM */
 void      pmm_free_frame(uintptr_t paddr);
+void      pmm_ref_inc(uintptr_t paddr);      /* share a frame (cow); free needs one pmm_free_frame per ref */
+uint32_t  pmm_ref(uintptr_t paddr);
 void      pmm_reserve_range(uintptr_t paddr, uintptr_t len);  /* mark frames used */
 
 /* stats */

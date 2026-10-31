@@ -68,6 +68,10 @@ static void pf_walk(uint32_t cr2) {
 void page_fault_handler(regs_t* r) {
     uint32_t cr2 = read_cr2();
 
+    // write to a present read-only page that is really a shared cow page (user or kernel mode)
+    if ((r->err_code & 3) == 3 && cr2 >= USER_LO && cr2 < USER_HI && paging_handle_cow(cr2))
+        return;
+
     if (r->cs & 3) {
         printf("\n[pid %d killed: segfault at %x, eip=%x]\n", proc_current()->pid, cr2, r->eip);
         proc_exit(139);

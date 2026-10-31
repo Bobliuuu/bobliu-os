@@ -24,7 +24,8 @@ void isr_handler(regs_t* r) {
     }
 
     if (r->int_no == 14) {
-        page_fault_handler(r);   // kills the process if it came from ring 3
+        page_fault_handler(r);   // returns only if it fixed things up (cow); else kills/halts
+        return;
     }
 
     if (r->int_no < 32) {

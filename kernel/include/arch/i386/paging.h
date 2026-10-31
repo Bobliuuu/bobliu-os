@@ -6,6 +6,7 @@
 #define P_PRESENT 0x001u
 #define P_RW      0x002u
 #define P_USER    0x004u
+#define P_COW     0x200u   /* software bit (PTE avl): write-protected because shared after fork */
 
 #define PAGE_SIZE 0x1000u
 #define PDE_COUNT 1024u
@@ -61,5 +62,7 @@ void     kstack_free(uint32_t slot);
 void paging_load(page_directory_t dir);
 /* free every user frame + page table (and the directory itself if free_pd) */
 void paging_free_user(page_directory_t dir, int free_pd);
-/* deep copy of src's user pages into a fresh directory (fork); pd_phys==0 on OOM */
+/* fork: child shares every user frame copy-on-write with src (src must be the loaded directory) */
 page_directory_t paging_clone_user(page_directory_t src);
+/* write fault on a cow page in the current directory: 1 if fixed up, 0 if not a cow fault / OOM */
+int paging_handle_cow(uint32_t vaddr);

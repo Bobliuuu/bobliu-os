@@ -30,6 +30,10 @@ static uint8_t*  g_bitmap = 0;     /* bitmap lives in kernel .bss/.data region a
 static uint32_t  g_total_frames = 0;
 static uint32_t  g_free_frames  = 0;
 
+/* share counts for cow; 0 or 1 both mean "single owner" */
+#define PMM_MAX_REF_FRAMES 131072u   /* 512 MiB */
+static uint8_t g_ref[PMM_MAX_REF_FRAMES];
+
 static inline void bit_set(uint32_t idx) {
     g_bitmap[idx >> 3] |=  (uint8_t)(1u << (idx & 7));
 }
@@ -182,6 +186,7 @@ uintptr_t pmm_alloc_frame(void) {
         if (!bit_test(f)) {
             bit_set(f);
             if (g_free_frames) g_free_frames--;
+            if (f < PMM_MAX_REF_FRAMES) g_ref[f] = 1;
             return (uintptr_t)f * FRAME_SIZE;
         }
     }
@@ -199,8 +204,26 @@ void pmm_free_frame(uintptr_t paddr) {
     if (!bit_test(f)) {
         panic_vga("pmm_free_frame: double free");
     }
+    if (f < PMM_MAX_REF_FRAMES && g_ref[f] > 1) {   // still shared: just drop one ref
+        g_ref[f]--;
+        return;
+    }
+    if (f < PMM_MAX_REF_FRAMES) g_ref[f] = 0;
     bit_clear(f);
     g_free_frames++;
+}
+
+void pmm_ref_inc(uintptr_t paddr) {
+    uint32_t f = (uint32_t)(paddr / FRAME_SIZE);
+    if (f >= PMM_MAX_REF_FRAMES) return;
+    if (g_ref[f] == 0) g_ref[f] = 1;
+    if (g_ref[f] < 255) g_ref[f]++;
+}
+
+uint32_t pmm_ref(uintptr_t paddr) {
+    uint32_t f = (uint32_t)(paddr / FRAME_SIZE);
+    if (f >= PMM_MAX_REF_FRAMES || g_ref[f] == 0) return 1;
+    return g_ref[f];
 }
 
 uint32_t pmm_total_frames(void) { return g_total_frames; }
