@@ -4,6 +4,7 @@
 #include <arch/i386/paging.h>
 
 #define NPROC       16
+#define PROC_MAXFD  16   /* user fds 0-2 are the console, 3+ map to vfs fds */
 #define KSTACK_SIZE 16384
 
 typedef enum {
@@ -29,10 +30,14 @@ typedef struct proc {
     uint8_t*       kstack;      // 0 for the boot/kernel context (pid 0)
     struct context* ctx;        // saved kernel context while not running
     regs_t*        tf;          // trap frame of the current syscall/irq
+    int            fds[PROC_MAXFD];   // user fd -> vfs fd, -1 if free (not inherited by fork)
     char           name[16];
 } proc_t;
 
 void    proc_init(void);
+int     proc_fd_alloc(int vfs_fd);      // user fd >= 3, or -1
+int     proc_fd_get(int ufd);           // vfs fd or -1
+void    proc_fd_free(int ufd);
 proc_t* proc_current(void);
 #define PROC_MAX_ARGS 16
 #define PROC_ARG_LEN  128

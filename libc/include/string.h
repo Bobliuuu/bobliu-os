@@ -17,6 +17,7 @@ size_t strlen(const char*);
 int strcmp(const char* a, const char* b);
 char* strcpy(char* restrict dest, const char* restrict src);
 char* strchr(const char* s, int c);
+char* strcat(char* dst, const char* src);
 char* strstr(const char* haystack, const char* needle);
 int strncmp(const char* a, const char* b, size_t n);
 char* strncpy(char* dst, const char* src, size_t n);

@@ -72,6 +72,23 @@ int vfs_close(int fd) {
     return 0;
 }
 
+int vfs_seek(int fd, int32_t off, int whence) {
+    if (fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return -1;
+    file_t* f = &g_fds[fd];
+    int64_t base = whence == 0 ? 0 : whence == 1 ? (int64_t)f->off : whence == 2 ? (int64_t)f->vn->size : -1;
+    if (base < 0) return -1;
+    int64_t n = base + off;
+    if (n < 0 || n > (int64_t)f->vn->size) return -1;
+    f->off = (uint32_t)n;
+    return (int)n;
+}
+
+int vfs_readdir_path(const char* path, uint32_t index, char* name_out, uint32_t name_max) {
+    vnode_t* vn = vfs_resolve(path);
+    if (!vn || !vn->is_dir || !vn->ops || !vn->ops->readdir) return -1;
+    return vn->ops->readdir(vn, index, name_out, name_max);
+}
+
 int vfs_ls(const char* path) {
     vnode_t* vn = vfs_resolve(path ? path : "/");
     if (!vn || !vn->is_dir || !vn->ops || !vn->ops->readdir) return -1;

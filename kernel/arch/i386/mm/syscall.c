@@ -4,6 +4,7 @@
 #include <arch/i386/paging.h>
 #include <kernel/syscall.h>
 #include <kernel/proc.h>
+#include <kernel/vfs.h>
 
 int console_read(char* dst, int max);
 
@@ -63,9 +64,58 @@ void syscall_handle(regs_t* r) {
         return;
     }
     case SYS_read: {
-        // only stdin (the console) for now
-        if (r->ebx != 0 || !user_range_ok(r->ecx, r->edx)) { r->eax = (uint32_t)-1; return; }
-        r->eax = (uint32_t)console_read((char*)r->ecx, (int)r->edx);
+        if (!user_range_ok(r->ecx, r->edx)) { r->eax = (uint32_t)-1; return; }
+        if (r->ebx == 0) {                       // stdin: the console
+            r->eax = (uint32_t)console_read((char*)r->ecx, (int)r->edx);
+        } else {
+            int vfd = proc_fd_get((int)r->ebx);
+            r->eax = (uint32_t)(vfd < 0 ? -1 : vfs_read(vfd, (void*)r->ecx, r->edx));
+        }
+        return;
+    }
+    case SYS_open: {
+        char path[PROC_ARG_LEN];
+        if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
+        int vfd = vfs_open(path);
+        if (vfd < 0) { r->eax = (uint32_t)-1; return; }
+        int ufd = proc_fd_alloc(vfd);
+        if (ufd < 0) vfs_close(vfd);
+        r->eax = (uint32_t)ufd;
+        return;
+    }
+    case SYS_close: {
+        int vfd = proc_fd_get((int)r->ebx);
+        if (vfd < 0) { r->eax = (uint32_t)-1; return; }
+        vfs_close(vfd);
+        proc_fd_free((int)r->ebx);
+        r->eax = 0;
+        return;
+    }
+    case SYS_lseek: {
+        int vfd = proc_fd_get((int)r->ebx);
+        r->eax = (uint32_t)(vfd < 0 ? -1 : vfs_seek(vfd, (int32_t)r->ecx, (int)r->edx));
+        return;
+    }
+    case SYS_stat: {
+        char path[PROC_ARG_LEN];
+        vfs_stat_t st;
+        if (copy_user_str(path, r->ebx, sizeof(path)) < 0 || !user_range_ok(r->ecx, sizeof(struct bob_stat)) ||
+            vfs_stat(path, &st) < 0) { r->eax = (uint32_t)-1; return; }
+        struct bob_stat* out = (struct bob_stat*)r->ecx;
+        out->size = st.size;
+        out->is_dir = st.is_dir;
+        r->eax = 0;
+        return;
+    }
+    case SYS_readdir: {
+        char path[PROC_ARG_LEN];
+        char name[128];
+        if (copy_user_str(path, r->ebx, sizeof(path)) < 0 || !user_range_ok(r->edx, sizeof(name))) {
+            r->eax = (uint32_t)-1; return;
+        }
+        int rc = vfs_readdir_path(path, r->ecx, name, sizeof(name));
+        if (rc > 0) memcpy((void*)r->edx, name, sizeof(name));
+        r->eax = (uint32_t)rc;
         return;
     }
     case SYS_execve: {
