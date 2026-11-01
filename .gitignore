@@ -23,3 +23,4 @@ isodir/
 .idea/
 # user programs built by iso.sh
 initrd/bin/
+disk.img

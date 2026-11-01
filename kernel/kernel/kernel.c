@@ -15,6 +15,8 @@
 #include <kernel/vfs.h>
 #include <kernel/initrd_vfs.h>
 #include <kernel/ramfs.h>
+#include <kernel/devfs.h>
+#include <arch/i386/ata.h>
 #include <arch/i386/paging.h>
 #include <arch/i386/gdt.h>
 #include <arch/i386/tss.h>
@@ -113,6 +115,10 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 		initrd_vfs_init(mod.start, mod.end);
 		vfs_init(initrd_vfs_root());
 		vfs_mount("/tmp", ramfs_create_root());
+		uint32_t nsec = ata_init();
+		if (nsec) printf("ata: hd0 %u sectors (%u KiB)\n", nsec, nsec / 2);
+		else printf("ata: no disk\n");
+		vfs_mount("/dev", devfs_create_root());
 	} else {
 		printf("no initrd module\n");
 	}
