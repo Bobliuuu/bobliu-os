@@ -142,6 +142,9 @@ void syscall_handle(regs_t* r) {
         r->eax = (uint32_t)proc_exec(path, argv, argc, r);
         return;
     }
+    case SYS_brk:
+        r->eax = (uint32_t)proc_brk(r->ebx);
+        return;
     case SYS_getpid:
         r->eax = (uint32_t)proc_current()->pid;
         return;

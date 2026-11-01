@@ -58,6 +58,8 @@ unistd/exec.o \
 unistd/wait.o \
 unistd/_exit.o \
 stdlib/exit.o \
+stdlib/malloc.o \
+unistd/brk.o \
 
 OBJS=\
 $(FREEOBJS) \

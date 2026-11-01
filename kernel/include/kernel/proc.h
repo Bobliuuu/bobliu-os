@@ -31,6 +31,7 @@ typedef struct proc {
     uint8_t*       kstack;      // 0 for the boot/kernel context (pid 0)
     struct context* ctx;        // saved kernel context while not running
     regs_t*        tf;          // trap frame of the current syscall/irq
+    uint32_t       brk;         // end of the user heap (starts at USER_HEAP_BASE)
     int            fds[PROC_MAXFD];   // user fd -> vfs fd / FD_CONSOLE / -1; inherited by fork and exec
     char           name[16];
 } proc_t;
@@ -56,6 +57,7 @@ void    proc_sleep_on(int chan);                    // irqs must be off; returns
 void    proc_wakeup(int chan);
 int     proc_kernel_busy(void);                     // kernel context is blocked waiting on a child
 void    proc_reap_orphans(void);                    // kernel context: reap zombies nobody waits for
+int     proc_brk(uint32_t addr);                    // new break, or -1; addr 0 just queries
 int     proc_count(void);
 void    proc_dump(void);                            // for the shell's ps
 

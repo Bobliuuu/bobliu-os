@@ -5,6 +5,7 @@
 #include <kernel/proc.h>
 #include <kernel/heap.h>
 #include <kernel/vfs.h>
+#include <arch/i386/pmm.h>
 #include <arch/i386/paging.h>
 #include <arch/i386/tss.h>
 #include <arch/i386/irq.h>
@@ -140,6 +141,7 @@ int proc_spawn(const char* path, char** argv, int argc) {
     if (!p) { paging_free_user(pd, 1); return -1; }
 
     p->pd = pd;
+    p->brk = USER_HEAP_BASE;
     setup_user_frame(p->tf, entry, sp);
     strncpy(p->name, path, sizeof(p->name) - 1);
 
@@ -159,6 +161,7 @@ int proc_fork(regs_t* tf) {
 
     memcpy(c->tf, tf, sizeof(regs_t));
     c->tf->eax = 0;                       // child sees fork() == 0
+    c->brk = parent->brk;                 // heap pages came along (cow)
     memcpy(c->name, parent->name, sizeof(c->name));
 
     uint32_t fl = irq_save();
@@ -176,6 +179,7 @@ int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
     page_directory_t old = p->pd;
 
     p->pd = npd;
+    p->brk = USER_HEAP_BASE;
     paging_load(npd);
     paging_free_user(old, 1);
 
@@ -309,6 +313,29 @@ int proc_fd_dup(int ofd, int nfd) {
     if (e >= 0) vfs_dup(e);
     g_cur->fds[nfd] = e;
     return nfd;
+}
+
+int proc_brk(uint32_t addr) {
+    proc_t* p = g_cur;
+    if (addr == 0) return (int)p->brk;
+    if (addr < USER_HEAP_BASE || addr > USER_HEAP_MAX) return -1;
+
+    uint32_t cur = (p->brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t top = (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    for (uint32_t va = cur; va < top; va += PAGE_SIZE) {
+        uint32_t f = (uint32_t)pmm_alloc_frame();
+        if (!f || paging_map_in(p->pd, va, f, P_USER | P_RW) < 0) {
+            if (f) pmm_free_frame(f);
+            for (uint32_t u = cur; u < va; u += PAGE_SIZE) paging_unmap_in(p->pd, u);
+            return -1;
+        }
+        memset((void*)f, 0, PAGE_SIZE);        // identity mapped
+    }
+    for (uint32_t va = top; va < cur; va += PAGE_SIZE) paging_unmap_in(p->pd, va);
+
+    p->brk = addr;
+    return (int)addr;
 }
 
 int proc_count(void) {

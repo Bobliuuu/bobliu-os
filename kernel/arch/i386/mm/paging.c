@@ -217,6 +217,17 @@ int paging_alloc_map_in(page_directory_t dir, uint32_t vaddr, uint32_t flags) {
     return paging_map_in(dir, vaddr, p, flags);
 }
 
+void paging_unmap_in(page_directory_t dir, uint32_t vaddr) {
+    uint32_t pde = dir.pd_virt[pde_index(vaddr)];
+    if (!(pde & P_PRESENT)) return;
+    uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
+    uint32_t pte = pt[pte_index(vaddr)];
+    if (!(pte & P_PRESENT)) return;
+    pt[pte_index(vaddr)] = 0;
+    pmm_free_frame(pte & 0xFFFFF000u);
+    asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+}
+
 static void memcpy32(void* dst, const void* src, uint32_t n) {
     uint8_t* d = (uint8_t*)dst;
     const uint8_t* s = (const uint8_t*)src;

@@ -22,6 +22,8 @@
 #define USER_HI         0x40000000u
 #define USER_STACK_TOP  USER_HI
 #define USER_STACK_PAGES 8u
+#define USER_HEAP_BASE  0x20000000u   /* brk() area: [HEAP_BASE, HEAP_MAX) */
+#define USER_HEAP_MAX   0x30000000u
 
 /* per-process kernel stacks live in their own shared region, each with an
    unmapped guard page below it (overflow faults instead of corrupting the heap) */
@@ -49,6 +51,8 @@ void paging_switch_directory(page_directory_t dir);
 int paging_map_in(page_directory_t dir, uint32_t vaddr, uint32_t paddr, uint32_t flags);
 int paging_alloc_map_in(page_directory_t dir, uint32_t vaddr, uint32_t flags);
 uint32_t paging_translate_in(page_directory_t dir, uint32_t vaddr);
+/* drop one page from dir and free its frame (no-op if not mapped) */
+void paging_unmap_in(page_directory_t dir, uint32_t vaddr);
 
 page_directory_t paging_clone_directory(page_directory_t src);
 
