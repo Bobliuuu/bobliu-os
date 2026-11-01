@@ -52,6 +52,7 @@ proc_t* proc_by_slot(int i);
 proc_t* proc_by_pid(int pid);   // live (non-zombie) process or 0
 #define WAIT_CHILD   0
 #define WAIT_CONSOLE 1
+#define WAIT_TIMER   2
 
 int     proc_spawn(const char* path, char** argv, int argc);   // returns pid or -1
 int     proc_fork(regs_t* tf);                      // child pid to parent, child resumes with 0

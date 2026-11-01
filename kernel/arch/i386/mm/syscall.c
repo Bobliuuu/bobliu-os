@@ -7,6 +7,8 @@
 #include <kernel/vfs.h>
 #include <kernel/pipe.h>
 #include <kernel/signal.h>
+#include <arch/i386/timer.h>
+#include <arch/i386/irq.h>
 
 int console_read(char* dst, int max);
 void console_set_raw(int on);
@@ -248,6 +250,41 @@ static void syscall_dispatch(regs_t* r) {
     case SYS_sigreturn:
         sig_return(r);
         return;
+    case SYS_time: {
+        uint32_t t = wall_time();
+        if (r->ebx) {
+            if (!user_range_ok(r->ebx, 4)) { r->eax = (uint32_t)-1; return; }
+            *(uint32_t*)r->ebx = t;
+        }
+        r->eax = t;
+        return;
+    }
+    case SYS_clock_gettime: {
+        struct bob_timespec* ts = (struct bob_timespec*)r->ecx;
+        if (r->ebx > 1 || !user_range_ok(r->ecx, sizeof(*ts))) { r->eax = (uint32_t)-1; return; }
+        uint64_t ms = timer_ms();
+        if (r->ebx == 0) { ts->tv_sec = (int)(wall_time()); ts->tv_nsec = (int)((ms % 1000) * 1000000); }
+        else             { ts->tv_sec = (int)(ms / 1000);   ts->tv_nsec = (int)((ms % 1000) * 1000000); }
+        r->eax = 0;
+        return;
+    }
+    case SYS_nanosleep: {
+        struct bob_timespec* ts = (struct bob_timespec*)r->ebx;
+        if (!user_range_ok(r->ebx, sizeof(*ts)) || ts->tv_sec < 0 || ts->tv_nsec < 0 || ts->tv_nsec >= 1000000000) {
+            r->eax = (uint32_t)-1; return;
+        }
+        uint32_t ticks = (uint32_t)ts->tv_sec * TIMER_HZ + ((uint32_t)ts->tv_nsec + 9999999u) / 10000000u;
+        uint32_t target = timer_ticks() + ticks;
+        int rc = 0;
+        uint32_t fl = irq_save();
+        while ((int32_t)(timer_ticks() - target) < 0) {
+            if (sig_interrupting()) { rc = -1; break; }
+            proc_sleep_on(WAIT_TIMER);
+        }
+        irq_restore(fl);
+        r->eax = (uint32_t)rc;
+        return;
+    }
     case SYS_getpid:
         r->eax = (uint32_t)proc_current()->pid;
         return;

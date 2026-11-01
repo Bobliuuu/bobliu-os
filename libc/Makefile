@@ -62,6 +62,7 @@ stdlib/exit.o \
 stdlib/malloc.o \
 unistd/brk.o \
 unistd/signal.o \
+unistd/time.o \
 
 OBJS=\
 $(FREEOBJS) \

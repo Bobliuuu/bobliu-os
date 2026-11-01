@@ -4,6 +4,7 @@
 #include <arch/i386/pic.h>
 
 void timer_init(unsigned hz);
+void rtc_init(void);
 void keyboard_init(void);
 
 void interrupts_init(void) {
@@ -16,6 +17,7 @@ void interrupts_init(void) {
     pic_clear_mask(1);
 
     timer_init(100);       // 100 Hz
+    rtc_init();
     keyboard_init();
 
     __asm__ volatile ("sti");

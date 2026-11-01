@@ -21,6 +21,8 @@ int read(int fd, void* buf, size_t count);   /* fd 0 only: line buffered console
 int tcsetraw(int on);   /* 1: raw console (read gives bytes, no echo, ^C = byte 3), 0: cooked */
 int brk(void* addr);
 void* sbrk(int incr);
+unsigned sleep(unsigned seconds);   /* returns seconds left if a signal cut it short (all of it, for now) */
+int usleep(unsigned usec);
 int pipe(int fds[2]);
 int dup(int fd);
 int dup2(int oldfd, int newfd);

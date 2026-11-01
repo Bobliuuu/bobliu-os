@@ -14,7 +14,9 @@
 #define SYS_close   6
 #define SYS_waitpid 7
 #define SYS_execve  11
+#define SYS_time    13   /* time(time_t*) -> unix seconds (utc) */
 #define SYS_chdir   12
+#define SYS_nanosleep 162 /* nanosleep(struct bob_timespec* req): 0, or -1 if a signal cut it short */
 #define SYS_getcwd  183  /* getcwd(buf, size) -> length incl. NUL, or -1 */
 #define SYS_getpid  20
 #define SYS_unlink  10
@@ -29,9 +31,15 @@
 #define SYS_dup2    63
 #define SYS_readdir 89   /* readdir(path, index, namebuf[128]) -> 1 / 0 at end / -1 */
 #define SYS_tcsetraw 200 /* tcsetraw(on): 1 = raw console (bytes, no echo), 0 = cooked; reset on exit */
-#define SYS_stat    106  /* stat(path, struct bob_stat*) */
+#define SYS_stat    106
+#define SYS_clock_gettime 265 /* clock_gettime(clk, struct bob_timespec*): clk 0 = wall (utc), 1 = since boot */  /* stat(path, struct bob_stat*) */
 
 #ifndef __ASSEMBLER__
+struct bob_timespec {
+    int tv_sec;
+    int tv_nsec;
+};
+
 struct bob_stat {
     unsigned int size;
     unsigned int is_dir;
