@@ -25,5 +25,4 @@ isodir/
 initrd/bin/
 disk.img
 doom/build/
-doom/wad/
 initrd/share/
