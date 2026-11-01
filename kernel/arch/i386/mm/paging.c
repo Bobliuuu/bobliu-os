@@ -38,7 +38,7 @@ void paging_init_identity(void) {
 
     g_pd = alloc_table();
 
-    // Identity-map 0..16MB => 4 page tables (PDE 0..3)
+    // identity-map 0..256MB (KERNEL_PDE_END page tables)
     for (uint32_t pde = 0; pde < KERNEL_PDE_END; pde++) {
         uint32_t* pt = alloc_table();
         for (uint32_t pte = 0; pte < PTE_COUNT; pte++) {
