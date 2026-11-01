@@ -33,6 +33,7 @@ stdio/printf.o \
 stdio/putchar.o \
 stdio/puts.o \
 stdio/sprintf.o \
+string/more.o \
 stdlib/abort.o \
 string/memcmp.o \
 string/memcpy.o \
@@ -65,6 +66,9 @@ unistd/brk.o \
 unistd/signal.o \
 unistd/time.o \
 unistd/pthread.o \
+stdio/file.o \
+stdio/sscanf.o \
+stdlib/util.o \
 
 OBJS=\
 $(FREEOBJS) \

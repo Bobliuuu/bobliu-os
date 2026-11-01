@@ -1,7 +1,12 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 
-// no atexit handlers or stdio buffers to flush yet
+void __run_atexit(void);
+
+// run atexit handlers, flush every stdio file, leave
 void exit(int status) {
+    __run_atexit();
+    fflush(NULL);
     _exit(status);
 }

@@ -109,6 +109,7 @@ Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
 | Secondary storage | #13 | Done | ATA PIO driver |
 | Real filesystems | #17 | Done (one) | `bobfs`; no FAT/ext2 |
 | Framebuffer + raw key events | #23 | Done | `fb_init()` gives a 640x480x32 linear framebuffer (qemu `-vga std`); `tcsetraw(2)` gives non-blocking raw scancodes with key up/down; demo `fbtest` |
+| libc stdio + extras | #24 | Done | `FILE` (fopen/fread/fwrite/fseek/fgets/fprintf...), vsnprintf with flags/width/precision/`ll`, sscanf, ctype, strtol/qsort/atexit/rand, strdup etc.; test `stdiotest` |
 | UI, networking, sound, USB | #19 (doom) | Open | doom still needs libc file stdio, WAD loading and a port |
 
 

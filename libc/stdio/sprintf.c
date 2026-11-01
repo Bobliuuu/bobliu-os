@@ -1,123 +1,145 @@
+// vsnprintf with the usual flags: - + space 0 #, width, .precision, * for both,
+// length hh h l ll z t j, conversions d i u x X o c s p %.   no floats.
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
-#define VA_START(ap, last) __builtin_va_start(ap, last)
-#define VA_END(ap)         __builtin_va_end(ap)
-#define VA_ARG(ap, type)  __builtin_va_arg(ap, type)
+typedef struct { char* p; char* end; size_t total; } out_t;
 
-static void buf_put(char** p, char* end, char c) {
-    if (*p < end) **p = c;
-    (*p)++;
+static void put(out_t* o, char c) {
+    if (o->p < o->end) *o->p++ = c;
+    o->total++;
 }
 
-static void buf_puts(char** p, char* end, const char* s) {
-    if (!s) s = "(null)";
-    while (*s) buf_put(p, end, *s++);
-}
+static void pad(out_t* o, char c, int n) { while (n-- > 0) put(o, c); }
 
-static void buf_put_uint(char** p, char* end, uint32_t v, uint32_t base) {
-    char tmp[16];
-    int i = 0;
+static void emit_num(out_t* o, uint64_t v, bool neg, unsigned base, bool upper,
+                     bool left, bool zero, bool plus, bool space, bool alt, int width, int prec) {
+    char tmp[24];
+    int n = 0;
+    const char* digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+    if (v == 0) { if (prec != 0) tmp[n++] = '0'; }
+    while (v) { tmp[n++] = digits[v % base]; v /= base; }
 
-    if (v == 0) {
-        buf_put(p, end, '0');
-        return;
-    }
+    int zeros = prec > n ? prec - n : 0;
+    char prefix[3]; int np = 0;
+    if (neg) prefix[np++] = '-';
+    else if (plus) prefix[np++] = '+';
+    else if (space) prefix[np++] = ' ';
+    if (alt && base == 16 && n) { prefix[np++] = '0'; prefix[np++] = upper ? 'X' : 'x'; }
+    if (alt && base == 8 && zeros == 0 && (n == 0 || tmp[n - 1] != '0')) zeros = 1;
 
-    while (v && i < (int)sizeof(tmp)) {
-        uint32_t d = v % base;
-        tmp[i++] = (d < 10) ? ('0' + d) : ('a' + d - 10);
-        v /= base;
-    }
-
-    while (i--) buf_put(p, end, tmp[i]);
-}
-
-static void buf_put_int(char** p, char* end, int32_t v) {
-    if (v < 0) {
-        buf_put(p, end, '-');
-        buf_put_uint(p, end, (uint32_t)(-v), 10);
-    } else {
-        buf_put_uint(p, end, (uint32_t)v, 10);
-    }
+    int len = np + zeros + n;
+    if (zero && !left && prec < 0 && width > len) zeros += width - len, len = width;
+    if (!left) pad(o, ' ', width - len);
+    for (int i = 0; i < np; i++) put(o, prefix[i]);
+    pad(o, '0', zeros);
+    while (n) put(o, tmp[--n]);
+    if (left) pad(o, ' ', width - len);
 }
 
 int vsnprintf(char* buf, size_t size, const char* fmt, __builtin_va_list ap) {
-    char* p = buf;
-    char* end = (size > 0) ? buf + size - 1 : buf;
+    out_t o = { buf, buf + (size ? size - 1 : 0), 0 };
 
     for (; *fmt; fmt++) {
-        if (*fmt != '%') {
-            buf_put(&p, end, *fmt);
-            continue;
-        }
+        if (*fmt != '%') { put(&o, *fmt); continue; }
+        fmt++;
 
-        fmt++; // skip %
+        bool left = false, zero = false, plus = false, space = false, alt = false;
+        for (;; fmt++) {
+            if (*fmt == '-') left = true;
+            else if (*fmt == '0') zero = true;
+            else if (*fmt == '+') plus = true;
+            else if (*fmt == ' ') space = true;
+            else if (*fmt == '#') alt = true;
+            else break;
+        }
+        int width = 0, prec = -1;
+        if (*fmt == '*') { width = __builtin_va_arg(ap, int); if (width < 0) { left = true; width = -width; } fmt++; }
+        else while (*fmt >= '0' && *fmt <= '9') width = width * 10 + (*fmt++ - '0');
+        if (*fmt == '.') {
+            fmt++; prec = 0;
+            if (*fmt == '*') { prec = __builtin_va_arg(ap, int); fmt++; }
+            else while (*fmt >= '0' && *fmt <= '9') prec = prec * 10 + (*fmt++ - '0');
+        }
+        int lng = 0;      // 0 int, 1 long, 2 long long
+        int small = 0;    // 1 short, 2 char
+        for (;; fmt++) {
+            if (*fmt == 'l') lng++;
+            else if (*fmt == 'h') small++;
+            else if (*fmt == 'z' || *fmt == 't' || *fmt == 'j') lng = 1;
+            else break;
+        }
 
         switch (*fmt) {
-        case '%':
-            buf_put(&p, end, '%');
-            break;
-
-        case 's': {
-            const char* s = VA_ARG(ap, const char*);
-            buf_puts(&p, end, s);
-            break;
-        }
-
+        case '%': put(&o, '%'); break;
         case 'c': {
-            char c = (char)VA_ARG(ap, int);
-            buf_put(&p, end, c);
+            char c = (char)__builtin_va_arg(ap, int);
+            if (!left) pad(&o, ' ', width - 1);
+            put(&o, c);
+            if (left) pad(&o, ' ', width - 1);
             break;
         }
-
-        case 'd': {
-            int v = VA_ARG(ap, int);
-            buf_put_int(&p, end, v);
+        case 's': {
+            const char* s = __builtin_va_arg(ap, const char*);
+            if (!s) s = "(null)";
+            int n = 0;
+            while (s[n] && (prec < 0 || n < prec)) n++;
+            if (!left) pad(&o, ' ', width - n);
+            for (int i = 0; i < n; i++) put(&o, s[i]);
+            if (left) pad(&o, ' ', width - n);
             break;
         }
-
-        case 'u': {
-            unsigned v = VA_ARG(ap, unsigned);
-            buf_put_uint(&p, end, v, 10);
+        case 'd': case 'i': {
+            int64_t v;
+            if (lng >= 2) v = __builtin_va_arg(ap, long long);
+            else if (lng == 1) v = __builtin_va_arg(ap, long);
+            else { v = __builtin_va_arg(ap, int); if (small == 1) v = (short)v; else if (small >= 2) v = (signed char)v; }
+            bool neg = v < 0;
+            emit_num(&o, neg ? (uint64_t)0 - (uint64_t)v : (uint64_t)v, neg, 10, false, left, zero, plus, space, false, width, prec);
             break;
         }
-
-        case 'x': {
-            unsigned v = VA_ARG(ap, unsigned);
-            buf_put_uint(&p, end, v, 16);
+        case 'u': case 'x': case 'X': case 'o': {
+            uint64_t v;
+            if (lng >= 2) v = __builtin_va_arg(ap, unsigned long long);
+            else if (lng == 1) v = __builtin_va_arg(ap, unsigned long);
+            else { v = __builtin_va_arg(ap, unsigned); if (small == 1) v = (unsigned short)v; else if (small >= 2) v = (unsigned char)v; }
+            unsigned base = *fmt == 'u' ? 10 : *fmt == 'o' ? 8 : 16;
+            emit_num(&o, v, false, base, *fmt == 'X', left, zero, false, false, alt, width, prec);
             break;
         }
-
+        case 'p': {
+            uintptr_t v = (uintptr_t)__builtin_va_arg(ap, void*);
+            emit_num(&o, v, false, 16, false, left, zero, false, false, true, width, prec);
+            break;
+        }
+        case 0: fmt--; break;      // lone % at the end
         default:
-            // unknown specifier: print literally
-            buf_put(&p, end, '%');
-            buf_put(&p, end, *fmt);
+            put(&o, '%'); put(&o, *fmt);
             break;
         }
     }
 
-    if (size > 0) {
-        if (p <= end) *p = '\0';
-        else buf[end - buf + 1] = '\0';
-    }
-
-    return (int)(p - buf);
+    if (size) *o.p = '\0';
+    return (int)o.total;
 }
 
 int snprintf(char* buf, size_t size, const char* fmt, ...) {
     __builtin_va_list ap;
-    VA_START(ap, fmt);
+    __builtin_va_start(ap, fmt);
     int r = vsnprintf(buf, size, fmt, ap);
-    VA_END(ap);
+    __builtin_va_end(ap);
     return r;
+}
+
+int vsprintf(char* buf, const char* fmt, __builtin_va_list ap) {
+    return vsnprintf(buf, 0x1000000, fmt, ap);   /* no real limit; -1 would wrap the end pointer */
 }
 
 int sprintf(char* buf, const char* fmt, ...) {
     __builtin_va_list ap;
-    VA_START(ap, fmt);
-    int r = vsnprintf(buf, 0x1000000, fmt, ap)   /* no real limit; -1 would wrap the end pointer */;
-    VA_END(ap);
+    __builtin_va_start(ap, fmt);
+    int r = vsnprintf(buf, 0x1000000, fmt, ap);
+    __builtin_va_end(ap);
     return r;
 }
