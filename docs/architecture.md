@@ -466,11 +466,13 @@ flowchart LR
     API --> CONSUMERS["kernel shell: ls cd cat hexdump<br/>user_load: ELF loading<br/>file syscalls via per-process fd tables"]
 ```
 
-- The VFS is a vnode interface: `read(vn, off, buf, len)`, `readdir(vn, index, name, max)`, `lookup(dir, name)`. A vnode carries ops, an `fs_data` pointer, size and an `is_dir` flag.
-- `vfs_resolve` walks an absolute path component by component through `lookup`. Relative path handling (`.`, `..`, cwd) is done by the kernel shell (`shell_canon_path`), not the VFS. The user shell does no path resolution beyond prefixing `/bin/`.
-- `vfs.c` keeps a single global table of 32 open files (`vfs_open`, `vfs_read`, `vfs_seek`, `vfs_close`), plus path-based `vfs_stat` and `vfs_readdir_path(path, index, name, max)`. `vfs_seek(fd, off, whence)` takes 0=SET, 1=CUR, 2=END and returns the new offset or -1.
-- Each process has its own fd table, `proc_t.fds[PROC_MAXFD]` with `PROC_MAXFD = 16`, mapping a user fd to a VFS fd (-1 if free). User fds 0-2 are the console; fds 3 and up map to VFS files. `proc_fd_alloc` hands out the lowest free slot from 3, `proc_fd_get` rejects fds below 3 or past 15, and `proc_fd_free` clears a slot. The `open`/`close`/`lseek`/`read` syscalls go through these. All of a process's fds are closed in `proc_exit`, and a new process (including a `fork` child) starts with an empty table. The global VFS table is shared, so at most 32 files are open across all processes.
-- Files are read-only: `open` ignores any flags, there is no write path and `write` accepts only fds 1 and 2.
+- The VFS is a vnode interface: `read`, `readdir`, `lookup`, plus optional `write`, `truncate`, `create`, `unlink` for writable filesystems and `put`, which the VFS calls when it is done with a vnode that `lookup`/`create` handed out (initrd vnodes are heap copies that `put` frees). A vnode carries ops, an `fs_data` pointer, size, an `is_dir` flag and a count of open files (`refs`).
+- A mount table (`vfs_mount(path, root)`, 4 entries) grafts other filesystems into the tree: `/tmp` is a ramfs, `/dev` is devfs. `walk()` checks the mount table first, then resolves the rest of the path component by component through `lookup`. Relative path handling (`.`, `..`, cwd) is done by the kernel shell (`shell_canon_path`), not the VFS.
+- `vfs.c` keeps a global table of 32 open files with a reference count, so `dup` and `fork` share one entry (and one offset) and the file is closed when the last reference goes. `vfs_open_flags` takes `O_RDONLY/O_WRONLY/O_RDWR/O_CREAT/O_TRUNC/O_APPEND`; `vfs_write`, `vfs_unlink` and `vfs_mkdir` go to the filesystem that owns the path, and fail on the read-only initrd. Path-based `vfs_stat` and `vfs_readdir_path` remain. `vfs_seek(fd, off, whence)` takes 0=SET, 1=CUR, 2=END.
+- Each process has its own fd table, `proc_t.fds[PROC_MAXFD]` with `PROC_MAXFD = 16`. An entry is a VFS fd (>= 0), `FD_CONSOLE` (-2) or -1 (free). Fds 0-2 start as `FD_CONSOLE` in pid 0, and every new process copies its parent's table, bumping the VFS refcount for file entries; `exec` keeps the table. `proc_fd_dup(old, new)` is `dup2` (new < 0 means lowest free), which is how the shell redirects stdout: open the file, `dup2(fd, 1)`, `close(fd)`, `execv`. All fds are closed in `proc_exit`.
+- **ramfs** (`fs/ramfs.c`, mounted on `/tmp`): a tree of nodes with file data in `kmalloc` buffers that double as they grow (256 KiB cap per file). A node removed with `unlink` while still open is freed on the last close. It lives in the kernel heap (4 MiB shared with everything else) and is gone at reboot.
+- **devfs** (`fs/devfs.c`, mounted on `/dev`): only `hd0`, present when the ATA probe found a disk. It maps byte offsets to sectors and uses read-modify-write for partial sectors.
+- **ATA** (`dev/ata.c`): primary bus, master drive, LBA28, polled PIO with the drive's interrupt disabled. `ata_init` runs `IDENTIFY`, reads the sector count, and rejects ATAPI/SATA signatures. `qemu.sh` attaches `disk.img` (created once by `iso.sh`, 1 MiB); without a disk the kernel prints `ata: no disk` and `/dev` is empty.
 - The initrd backend scans the tar on every lookup and directory read (no index). It is read-only.
 - The tar is built by `iso.sh` from `initrd/` (including the generated `initrd/bin`), with macOS metadata stripped (`COPYFILE_DISABLE`, `--no-xattrs`, `--exclude=._*`).
 
@@ -488,15 +490,20 @@ Linux i386.
 | Nr | Name | Args | Behavior |
 |---|---|---|---|
 | 1 | `SYS_exit` | `ebx` = status | ends the calling process (zombie until reaped); never returns |
-| 2 | `SYS_fork` | none | duplicates the process (copy-on-write: user pages are shared and copied on first write; the fd table is not inherited); returns the child's pid to the parent and 0 to the child, or -1 |
-| 3 | `SYS_read` | `ebx` = fd, `ecx` = buf, `edx` = len | fd 0: blocking, line-buffered read from the console; sleeps until a full line is available and returns up to one line (including the `\n`), at most `len` bytes. fd 3+: reads from the open file at its current offset, returns bytes read (0 at EOF). -1 for fd 1/2, an unopened fd or a bad buffer |
-| 4 | `SYS_write` | `ebx` = fd (1 or 2), `ecx` = buf, `edx` = len | writes to the VGA terminal via `putchar`; fd 1 and 2 are identical; returns `len`, or -1 for another fd or an invalid buffer |
-| 5 | `SYS_open` | `ebx` = path | opens a file (read-only; no flags argument is read); returns the lowest free fd from 3, or -1 (bad path, not found, fd table full) |
-| 6 | `SYS_close` | `ebx` = fd | closes fd 3+; 0, or -1 if not open |
+| 2 | `SYS_fork` | none | duplicates the process (copy-on-write: user pages are shared and copied on first write; open files are shared with the child, including their offset); returns the child's pid to the parent and 0 to the child, or -1 |
+| 3 | `SYS_read` | `ebx` = fd, `ecx` = buf, `edx` = len | fd 0: blocking, line-buffered read from the console; sleeps until a full line is available and returns up to one line (including the `\n`), at most `len` bytes. a file fd: reads from the open file at its current offset, returns bytes read (0 at EOF). A dup of the console reads the console. -1 for an unopened or write-only fd or a bad buffer |
+| 4 | `SYS_write` | `ebx` = fd, `ecx` = buf, `edx` = len | console fds write to the VGA terminal via `putchar`; file fds write through the VFS (appending if opened with `O_APPEND`); returns the bytes written, or -1 (closed fd, read-only file, invalid buffer) |
+| 5 | `SYS_open` | `ebx` = path, `ecx` = flags | opens a file (`O_RDONLY/O_WRONLY/O_RDWR`, `O_CREAT`, `O_TRUNC`, `O_APPEND`; Linux values); returns the lowest free fd, or -1 (not found, read-only filesystem, fd table full) |
+| 6 | `SYS_close` | `ebx` = fd | closes any open fd (console fds too); 0, or -1 if not open |
 | 7 | `SYS_waitpid` | `ebx` = pid (or -1), `ecx` = `int*` status (may be 0), `edx` ignored | blocks until a matching child is a zombie; returns its pid and reaps it; -1 if there is no such child |
+| 10 | `SYS_unlink` | `ebx` = path | removes a file or an empty directory (writable filesystems only); 0 or -1 |
 | 11 | `SYS_execve` | `ebx` = path, `ecx` = `argv` (NULL-terminated, may be 0) | replaces the process image; returns only on failure (-1). Up to 16 args of 128 bytes; `envp` is not passed |
 | 19 | `SYS_lseek` | `ebx` = fd, `ecx` = offset, `edx` = whence (0 SET, 1 CUR, 2 END) | returns the new offset or -1 |
 | 20 | `SYS_getpid` | none | the caller's pid |
+| 39 | `SYS_mkdir` | `ebx` = path | creates a directory (writable filesystems only); 0 or -1 |
+| 41 | `SYS_dup` | `ebx` = fd | another fd for the same open file (lowest free); -1 on error |
+| 45 | `SYS_brk` | `ebx` = address | moves the end of the heap (`0x20000000..0x30000000`), zero-filled pages; returns the new break or -1; `brk(0)` returns the current one |
+| 63 | `SYS_dup2` | `ebx` = old fd, `ecx` = new fd | makes `new` refer to the same open file as `old`, closing `new` first; returns `new` or -1 |
 | 89 | `SYS_readdir` | `ebx` = path, `ecx` = index, `edx` = `char name[128]` | copies the index-th entry name of the directory into `name`; returns 1, 0 past the last entry, or -1 on error |
 | 106 | `SYS_stat` | `ebx` = path, `ecx` = `struct bob_stat*` | fills `size` and `is_dir`; 0, or -1 |
 | other | | | returns -1 |
@@ -505,7 +512,7 @@ The header also provides `__syscall3(num, a, b, c)` as an inline helper; the lib
 it. All user pointers are checked with `user_range_ok` (inside the user region, every page
 mapped) before the kernel touches them.
 
-libc wrappers (`libc/unistd/`, `libc/stdlib/exit.c`): `read`, `write`, `open`, `close`, `lseek`,
+libc wrappers (`libc/unistd/`, `libc/stdlib/`): `read`, `write`, `open`, `close`, `lseek`, `dup`, `dup2`, `unlink`, `mkdir`, `brk`, `sbrk`, `malloc`/`calloc`/`realloc`/`free` (`stdlib/malloc.c`, first-fit with coalescing on `sbrk`),
 `getpid`, `fork`, `execv`, `execve`, `_exit`, `waitpid`, `wait`, `exit`, `stat` (`sys/stat.h`,
 `struct stat` with `st_size` and `st_isdir`) and `readdir_at(path, index, name)` (`dirent.h`, names
 up to `DIRENT_NAME_MAX` = 128), plus `strcat` in `string.h`; `sys/wait.h` defines `WEXITSTATUS`
@@ -586,7 +593,8 @@ does nothing, lines are never submitted and `init=` is ignored.
 - **Copy-on-write details.** `fork` copies nothing until a write, but still walks and clones all page tables. If allocating the new frame fails during a COW fault, the fault falls through to the normal path and the process is killed (segfault, 139). Frame refcounts are one byte each, saturate at 255 sharers, and only the first 512 MiB of frames are tracked.
 - **Cooperative blocking only in `waitpid` and `read`.** Preemption happens only for ring 3 code, on the timer (every 5 ticks = 50 ms). Kernel code, including whole syscalls, is never preempted; the kernel context (pid 0) and syscalls run to completion or until they sleep. There is no `sleep`, `yield`, `kill` or signal syscall, and no priorities.
 - **Kernel-stack guard covers process stacks only.** Process stacks have an unmapped guard page, but the pid 0 context still runs on the 16 KiB boot stack and the TSS bootstrap stack is a static 4 KiB buffer, neither guarded. A guard hit is fatal: the kernel prints `KERNEL STACK OVERFLOW` and halts.
-- **File support is minimal.** Files are read-only (`open` ignores flags; `write` works only on fds 1 and 2, identical). There is no `dup`, `pipe`, `brk`/`mmap`, `chdir` or per-process cwd. A process has 16 fds (0-2 reserved for the console), the kernel has 32 open files in total, and fds are not inherited across `fork` (a forked child must reopen files).
+- **File support is basic.** Only `/tmp` (ramfs, in the 4 MiB kernel heap, 256 KiB per file, lost at reboot) and `/dev/hd0` are writable; the initrd is read-only. The disk has no filesystem, just raw bytes. There is no `pipe`, `mmap`, `chdir` or per-process cwd, `lseek` cannot go past the end of a file, and `mkdir` names are limited to 31 characters. A process has 16 fds, the kernel 32 open files in total. The shell only understands `>`/`>>` as separate words from the command (`echo a >f` works, `echo a>f` does not).
+- **`brk` heap.** One contiguous region of at most 256 MiB per process at a fixed address; `malloc` never gives memory back to the kernel (it only reuses it), and exit frees everything.
 - **Process limits.** At most 16 processes (including pid 0); pids are not reused within a boot and a process that finds no free slot or no memory gets -1 from `fork`.
 - **Argument passing.** `execve` copies at most 16 arguments of 128 bytes each (the path is also limited to 128 bytes); longer ones make it fail with -1. `envp` is ignored and no environment is passed.
 - **stdin is one global console buffer.** All processes share it; whichever calls `read` first gets a line. Input is only delivered to user programs while pid 0 is blocked in `waitpid`; otherwise lines go to the kernel shell. A line over the buffer's free space is dropped. There is no raw mode, no EOF (Ctrl-D), no Ctrl-C.
