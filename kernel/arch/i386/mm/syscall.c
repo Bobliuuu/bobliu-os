@@ -5,6 +5,7 @@
 #include <kernel/syscall.h>
 #include <kernel/proc.h>
 #include <kernel/vfs.h>
+#include <kernel/pipe.h>
 
 int console_read(char* dst, int max);
 
@@ -129,6 +130,24 @@ void syscall_handle(regs_t* r) {
     }
     case SYS_close: {
         r->eax = (uint32_t)proc_fd_close((int)r->ebx);
+        return;
+    }
+    case SYS_pipe: {
+        vnode_t *rv, *wv;
+        if (!user_range_ok(r->ebx, 8) || pipe_create(&rv, &wv) < 0) { r->eax = (uint32_t)-1; return; }
+        int rf = vfs_open_vnode(rv, O_RDONLY);
+        int wf = rf < 0 ? -1 : vfs_open_vnode(wv, O_WRONLY);
+        int ru = wf < 0 ? -1 : proc_fd_alloc(rf);
+        int wu = ru < 0 ? -1 : proc_fd_alloc(wf);
+        if (wu < 0) {                       // unwind whatever succeeded
+            if (ru >= 0) proc_fd_close(ru);
+            else if (wf >= 0) vfs_close(rf);
+            if (wf >= 0) vfs_close(wf);
+            r->eax = (uint32_t)-1; return;
+        }
+        ((int*)r->ebx)[0] = ru;
+        ((int*)r->ebx)[1] = wu;
+        r->eax = 0;
         return;
     }
     case SYS_dup:

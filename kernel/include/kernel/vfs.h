@@ -56,6 +56,7 @@ typedef struct {
 void vfs_init(vnode_t* root);
 int  vfs_open(const char* path);                     // read only
 int  vfs_open_flags(const char* path, int flags);   // O_CREAT/O_TRUNC/O_APPEND/O_WRONLY/O_RDWR
+int  vfs_open_vnode(vnode_t* vn, int flags);        // for pipes etc: vnode not reachable by path
 int  vfs_write(int fd, const void* buf, uint32_t len);
 int  vfs_unlink(const char* path);
 int  vfs_mkdir(const char* path);

@@ -46,3 +46,7 @@ int chdir(const char* path) {
 char* getcwd(char* buf, size_t size) {
     return __syscall3(SYS_getcwd, (int)buf, (int)size, 0) < 0 ? 0 : buf;
 }
+
+int pipe(int fds[2]) {
+    return __syscall3(SYS_pipe, (int)fds, 0, 0);
+}

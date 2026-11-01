@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MAX_FD 32
+#define MAX_FD 64
 
 static vnode_t* g_root = 0;
 static file_t g_fds[MAX_FD];
@@ -83,6 +83,22 @@ static vnode_t* walk(const char* path, int want_parent, char* last, size_t last_
 
 static vnode_t* vfs_resolve(const char* path) { return walk(path, 0, 0, 0); }
 
+// put an already-resolved vnode into the open file table (takes over the caller's reference)
+int vfs_open_vnode(vnode_t* vn, int flags) {
+    for (int fd = 0; fd < MAX_FD; fd++) {
+        if (!g_fds[fd].used) {
+            g_fds[fd].used = 1;
+            g_fds[fd].vn = vn;
+            g_fds[fd].off = 0;
+            g_fds[fd].refs = 1;
+            g_fds[fd].flags = flags;
+            vn->refs++;
+            return fd;
+        }
+    }
+    return -1;
+}
+
 int vfs_open_flags(const char* path, int flags) {
     vnode_t* vn = vfs_resolve(path);
     int acc = flags & 3;
@@ -99,19 +115,9 @@ int vfs_open_flags(const char* path, int flags) {
     if (acc != O_WRONLY && !(vn->ops && vn->ops->read)) { vput(vn); return -1; }
     if ((flags & O_TRUNC) && acc != O_RDONLY && vn->ops->truncate) vn->ops->truncate(vn);
 
-    for (int fd = 0; fd < MAX_FD; fd++) {
-        if (!g_fds[fd].used) {
-            g_fds[fd].used = 1;
-            g_fds[fd].vn = vn;
-            g_fds[fd].off = 0;
-            g_fds[fd].refs = 1;
-            g_fds[fd].flags = flags;
-            vn->refs++;
-            return fd;
-        }
-    }
-    vput(vn);
-    return -1;
+    int fd = vfs_open_vnode(vn, flags);
+    if (fd < 0) vput(vn);
+    return fd;
 }
 
 int vfs_open(const char* path) { return vfs_open_flags(path, O_RDONLY); }

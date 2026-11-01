@@ -20,6 +20,7 @@ int lseek(int fd, int offset, int whence);
 int read(int fd, void* buf, size_t count);   /* fd 0 only: line buffered console */
 int brk(void* addr);
 void* sbrk(int incr);
+int pipe(int fds[2]);
 int dup(int fd);
 int dup2(int oldfd, int newfd);
 int getpid(void);

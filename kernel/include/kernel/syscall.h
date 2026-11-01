@@ -21,6 +21,7 @@
 #define SYS_lseek   19
 #define SYS_mkdir   39
 #define SYS_dup     41
+#define SYS_pipe    42   /* pipe(int fds[2]): fds[0] read end, fds[1] write end */
 #define SYS_brk     45   /* brk(addr): new break or -1; brk(0) queries */
 #define SYS_dup2    63
 #define SYS_readdir 89   /* readdir(path, index, namebuf[128]) -> 1 / 0 at end / -1 */
