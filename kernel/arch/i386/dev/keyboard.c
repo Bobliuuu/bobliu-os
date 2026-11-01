@@ -108,6 +108,42 @@ static inline char apply_caps_shift(char c, bool shift, bool caps) {
     return c;
 }
 
+extern int console_is_raw(void);
+extern void console_push_byte(char c);
+
+static void raw_str(const char* s) { while (*s) console_push_byte(*s++); }
+
+// raw (vi) mode: deliver bytes immediately, no echo. arrows -> ESC [ A/B/C/D,
+// home/end/del -> ESC [ H / F / 3 ~, ctrl-c -> byte 3 (no SIGINT), backspace -> 127
+static void raw_key(uint8_t sc, bool ext) {
+    if (ext) {
+        switch (sc) {
+        case 0x48: raw_str("\033[A"); break;
+        case 0x50: raw_str("\033[B"); break;
+        case 0x4D: raw_str("\033[C"); break;
+        case 0x4B: raw_str("\033[D"); break;
+        case 0x47: raw_str("\033[H"); break;
+        case 0x4F: raw_str("\033[F"); break;
+        case 0x53: raw_str("\033[3~"); break;
+        case 0x1C: console_push_byte('\n'); break;   // keypad enter
+        }
+        return;
+    }
+    if (sc == 0x01) { console_push_byte(27); return; }
+    if (sc == SC_ENTER) { console_push_byte('\n'); return; }
+    if (sc == SC_BACKSP) { console_push_byte(127); return; }
+    if (sc == 0x0F) { console_push_byte('\t'); return; }
+    char c = g_shift ? keymap_shift[sc] : keymap[sc];
+    if (c == 0) return;
+    c = apply_caps_shift(c, g_shift, g_caps);
+    if (g_ctrl) {
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 1);
+        else if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 1);
+        else return;
+    }
+    console_push_byte(c);
+}
+
 void keyboard_irq(regs_t* r) {
     //terminal_putchar('.');
     (void)r;
@@ -123,9 +159,9 @@ void keyboard_irq(regs_t* r) {
         return;
     }
     if (e0) {
-        // ignore extended scancode for now
         e0 = false;
-        return;
+        if (console_is_raw() && !(sc & 0x80)) raw_key(sc, true);
+        return;   // extended keys are ignored in cooked mode
     }
 
     bool released = (sc & 0x80) != 0;
@@ -147,6 +183,8 @@ void keyboard_irq(regs_t* r) {
 
     // Only act on key press (make), ignore releases for normal keys
     if (released) return;
+
+    if (console_is_raw()) { raw_key(sc, false); return; }
 
     // ctrl-c: drop the line being typed and interrupt user programs
     if (g_ctrl && sc == 0x2E) {

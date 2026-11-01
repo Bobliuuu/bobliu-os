@@ -9,6 +9,7 @@
 #include <kernel/signal.h>
 
 int console_read(char* dst, int max);
+void console_set_raw(int on);
 
 extern int putchar(int);
 
@@ -151,6 +152,10 @@ static void syscall_dispatch(regs_t* r) {
         r->eax = 0;
         return;
     }
+    case SYS_tcsetraw:
+        console_set_raw((int)r->ebx);
+        r->eax = 0;
+        return;
     case SYS_dup:
         r->eax = (uint32_t)proc_fd_dup((int)r->ebx, -1);
         return;
