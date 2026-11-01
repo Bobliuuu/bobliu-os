@@ -29,7 +29,7 @@ int sig_send(proc_t* p, int sig) {
     if (sig == 0) return 0;                              // just checking it exists
 
     uint32_t fl = irq_save();
-    if (!(p->sig_handler[sig] == SIG_IGN && sig != SIGKILL)) {
+    if (!(p->group->sig_handler[sig] == SIG_IGN && sig != SIGKILL)) {
         p->sig_pending |= 1u << sig;
         if (p->state == PROC_SLEEPING) p->state = PROC_RUNNABLE;   // let it notice
     }
@@ -56,9 +56,10 @@ int sig_interrupting(void) {
 int sig_set(int sig, uint32_t handler, uint32_t restorer) {
     if (sig <= 0 || sig >= NSIG || sig == SIGKILL) return -1;
     proc_t* p = proc_current();
-    uint32_t old = p->sig_handler[sig];
-    p->sig_handler[sig] = handler;
-    if (handler > SIG_IGN) p->sig_restorer = restorer;
+    proc_t* g = p->group;
+    uint32_t old = g->sig_handler[sig];
+    g->sig_handler[sig] = handler;
+    if (handler > SIG_IGN) g->sig_restorer = restorer;
     if (handler == SIG_IGN) p->sig_pending &= ~(1u << sig);
     return (int)old;
 }
@@ -85,16 +86,16 @@ void sig_deliver(regs_t* tf) {
         int sig = __builtin_ctz(ready);
         p->sig_pending &= ~(1u << sig);
 
-        uint32_t h = p->sig_handler[sig];
+        uint32_t h = p->group->sig_handler[sig];
         if (sig == SIGKILL) die(sig);
         if (h == SIG_IGN) continue;
         if (h == SIG_DFL) die(sig);                       // every default action here is "terminate"
 
         uint32_t sp = (tf->useresp - sizeof(struct sigframe)) & ~3u;
-        if (!p->sig_restorer || !user_writable(p->pd, sp, sizeof(struct sigframe))) die(SIGSEGV);
+        if (!p->group->sig_restorer || !user_writable(p->pd, sp, sizeof(struct sigframe))) die(SIGSEGV);
 
         struct sigframe* f = (struct sigframe*)sp;
-        f->ret = p->sig_restorer;
+        f->ret = p->group->sig_restorer;
         f->sig = (uint32_t)sig;
         f->oldmask = p->sig_mask;
         f->saved = *tf;

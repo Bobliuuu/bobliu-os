@@ -63,6 +63,7 @@ stdlib/malloc.o \
 unistd/brk.o \
 unistd/signal.o \
 unistd/time.o \
+unistd/pthread.o \
 
 OBJS=\
 $(FREEOBJS) \

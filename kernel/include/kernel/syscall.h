@@ -21,6 +21,14 @@
 #define SYS_getpid  20
 #define SYS_unlink  10
 #define SYS_lseek   19
+#define SYS_clone   120  /* clone(struct bob_clone*): new thread sharing the address space; returns its tid */
+#define SYS_sched_yield 158
+#define SYS_gettid  224
+#define SYS_futex   240  /* futex(addr, op, val): op 0 = sleep if *addr == val, 1 = wake sleepers on addr */
+#define SYS_thread_exit 300   /* thread_exit(code): ends this thread (the main thread ending itself ends the process) */
+#define SYS_thread_join 301   /* thread_join(tid, int* code) -> tid, or -1 */
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
 #define SYS_kill    37
 #define SYS_signal  48   /* signal(sig, handler, restorer) -> old handler; 0 = default, 1 = ignore */
 #define SYS_sigreturn 119
@@ -35,6 +43,13 @@
 #define SYS_clock_gettime 265 /* clock_gettime(clk, struct bob_timespec*): clk 0 = wall (utc), 1 = since boot */  /* stat(path, struct bob_stat*) */
 
 #ifndef __ASSEMBLER__
+struct bob_clone {
+    unsigned int fn;         /* void fn(void* arg) */
+    unsigned int arg;
+    unsigned int stack_top;  /* thread stack, grows down */
+    unsigned int exit_stub;  /* fn's return address (should call thread_exit) */
+};
+
 struct bob_timespec {
     int tv_sec;
     int tv_nsec;

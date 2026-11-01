@@ -23,6 +23,7 @@ static int g_next_pid = 1;
 void proc_init(void) {
     memset(g_procs, 0, sizeof(g_procs));
     proc_t* k = KERNEL_PROC;
+    k->group = k;
     for (int f = 0; f < PROC_MAXFD; f++) k->fds[f] = f < 3 ? FD_CONSOLE : -1;
     k->pid = 0;
     strcpy(k->cwd, "/");
@@ -40,36 +41,62 @@ proc_t* proc_by_pid(int pid) {
     return 0;
 }
 
-static proc_t* proc_alloc(void) {
+static void proc_release(proc_t* p);
+
+// a thread zombie nobody joined: free its slot (only called when the table is full)
+static void reap_thread_zombies(void) {
     for (int i = 1; i < NPROC; i++) {
-        proc_t* p = &g_procs[i];
-        if (p->state != PROC_UNUSED) continue;
+        proc_t* q = &g_procs[i];
+        if (q->state == PROC_ZOMBIE && q->is_thread && q != g_cur) proc_release(q);
+    }
+}
 
-        uint8_t* ks = (uint8_t*)kstack_alloc((uint32_t)i);
-        if (!ks) return 0;
+// thread != 0: a new thread of the caller's group (shares everything, parent is the kernel
+// so waitpid never sees it); else a new process that inherits copies of the caller's group state
+static proc_t* proc_alloc(int thread) {
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 1; i < NPROC; i++) {
+            proc_t* p = &g_procs[i];
+            if (p->state != PROC_UNUSED) continue;
 
-        memset(p, 0, sizeof(*p));
-        // children share the parent's open files (same offset, like unix)
-        for (int f = 0; f < PROC_MAXFD; f++) {
-            p->fds[f] = g_cur->fds[f];
-            if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
+            uint8_t* ks = (uint8_t*)kstack_alloc((uint32_t)i);
+            if (!ks) return 0;
+
+            proc_t* src = g_cur->group;
+            memset(p, 0, sizeof(*p));
+            for (int f = 0; f < PROC_MAXFD; f++) p->fds[f] = -1;
+            if (thread) {
+                p->group = src;
+                p->is_thread = 1;
+                p->parent = KERNEL_PROC;
+                p->pd = g_cur->pd;
+                p->sig_mask = g_cur->sig_mask;
+            } else {
+                // children share the parent's open files (same offset, like unix)
+                for (int f = 0; f < PROC_MAXFD; f++) {
+                    p->fds[f] = src->fds[f];
+                    if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
+                }
+                strcpy(p->cwd, src->cwd);
+                memcpy(p->sig_handler, src->sig_handler, sizeof(p->sig_handler));
+                p->sig_restorer = src->sig_restorer;
+                p->sig_mask = g_cur->sig_mask;
+                p->group = p;
+                p->parent = src;
+            }
+            p->pid = g_next_pid++;
+            p->kstack = ks;
+
+            // lay out: [ ... | context | trap frame ] growing down from the top
+            uint8_t* top = ks + KSTACK_SIZE;
+            p->tf = (regs_t*)(top - sizeof(regs_t));
+            memset(p->tf, 0, sizeof(regs_t));
+            p->ctx = (struct context*)((uint8_t*)p->tf - sizeof(struct context));
+            memset(p->ctx, 0, sizeof(struct context));
+            p->ctx->eip = (uint32_t)trapret;
+            return p;
         }
-        strcpy(p->cwd, g_cur->cwd);
-        memcpy(p->sig_handler, g_cur->sig_handler, sizeof(p->sig_handler));
-        p->sig_restorer = g_cur->sig_restorer;
-        p->sig_mask = g_cur->sig_mask;
-        p->pid = g_next_pid++;
-        p->kstack = ks;
-        p->parent = g_cur;
-
-        // lay out: [ ... | context | trap frame ] growing down from the top
-        uint8_t* top = ks + KSTACK_SIZE;
-        p->tf = (regs_t*)(top - sizeof(regs_t));
-        memset(p->tf, 0, sizeof(regs_t));
-        p->ctx = (struct context*)((uint8_t*)p->tf - sizeof(struct context));
-        memset(p->ctx, 0, sizeof(struct context));
-        p->ctx->eip = (uint32_t)trapret;
-        return p;
+        if (pass == 0) reap_thread_zombies();
     }
     return 0;
 }
@@ -149,7 +176,7 @@ int proc_spawn(const char* path, char** argv, int argc) {
     uint32_t entry, sp;
     if (user_load(path, argv, argc, &pd, &entry, &sp) < 0) return -1;
 
-    proc_t* p = proc_alloc();
+    proc_t* p = proc_alloc(0);
     if (!p) { paging_free_user(pd, 1); return -1; }
 
     p->pd = pd;
@@ -165,7 +192,7 @@ int proc_spawn(const char* path, char** argv, int argc) {
 
 int proc_fork(regs_t* tf) {
     proc_t* parent = g_cur;
-    proc_t* c = proc_alloc();
+    proc_t* c = proc_alloc(0);
     if (!c) return -1;
 
     c->pd = paging_clone_user(parent->pd);
@@ -173,7 +200,7 @@ int proc_fork(regs_t* tf) {
 
     memcpy(c->tf, tf, sizeof(regs_t));
     c->tf->eax = 0;                       // child sees fork() == 0
-    c->brk = parent->brk;                 // heap pages came along (cow)
+    c->brk = parent->group->brk;                 // heap pages came along (cow)
     memcpy(c->name, parent->name, sizeof(c->name));
 
     uint32_t fl = irq_save();
@@ -182,12 +209,22 @@ int proc_fork(regs_t* tf) {
     return c->pid;
 }
 
+static int threads_alive(proc_t* leader) {
+    int n = 0;
+    for (int i = 1; i < NPROC; i++) {
+        proc_t* q = &g_procs[i];
+        if (q->state != PROC_UNUSED && q->state != PROC_ZOMBIE && q->group == leader) n++;
+    }
+    return n;
+}
+
 int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
     page_directory_t npd;
     uint32_t entry, sp;
     if (user_load(path, argv, argc, &npd, &entry, &sp) < 0) return -1;
 
     proc_t* p = g_cur;
+    if (threads_alive(p->group) > 1) return -1;       // exec would pull the address space out from under them
     page_directory_t old = p->pd;
 
     p->pd = npd;
@@ -205,11 +242,23 @@ int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
 
 void console_set_raw(int on);
 
+// ends the whole process (every thread), like exit_group
 void proc_exit(int code) {
     proc_t* p = g_cur;
     if (p == KERNEL_PROC) { printf("proc_exit: kernel cannot exit\n"); for (;;) __asm__ volatile("hlt"); }
+    proc_t* leader = p->group;
 
-    fds_close_all(p);
+    // the other threads are not running (one cpu): just drop them
+    for (int i = 1; i < NPROC; i++) {
+        proc_t* q = &g_procs[i];
+        if (q != p && q != leader && q->state != PROC_UNUSED && q->group == leader) {
+            uint32_t f = irq_save();
+            proc_release(q);
+            irq_restore(f);
+        }
+    }
+
+    fds_close_all(leader);
     console_set_raw(0);          // never leave the console raw behind a dead program
 
     uint32_t fl = irq_save();   // never restored: this context dies
@@ -222,14 +271,23 @@ void proc_exit(int code) {
 
     // children get adopted by the kernel context
     for (int i = 1; i < NPROC; i++) {
-        if (g_procs[i].state != PROC_UNUSED && g_procs[i].parent == p)
+        if (g_procs[i].state != PROC_UNUSED && g_procs[i].parent == leader)
             g_procs[i].parent = KERNEL_PROC;
     }
 
-    p->exit_code = code;
-    p->state = PROC_ZOMBIE;
-    if (p->parent && p->parent->state == PROC_SLEEPING && p->parent->chan == WAIT_CHILD)
-        p->parent->state = PROC_RUNNABLE;
+    leader->exit_code = code;
+    leader->state = PROC_ZOMBIE;
+    for (int i = 0; i < NPROC; i++) {      // whoever in the parent's group waits in waitpid
+        proc_t* w = &g_procs[i];
+        if (leader->parent && w->group == leader->parent && w->state == PROC_SLEEPING && w->chan == WAIT_CHILD)
+            w->state = PROC_RUNNABLE;
+    }
+
+    if (p != leader) {           // a worker ended the process: it dies too, but waitpid only sees the leader
+        p->is_thread = 1;
+        p->parent = KERNEL_PROC;
+        p->state = PROC_ZOMBIE;
+    }
 
     sched();
     (void)fl;
@@ -237,13 +295,62 @@ void proc_exit(int code) {
     for (;;) __asm__ volatile("cli; hlt");
 }
 
-int proc_wait(int pid, int* status) {
+// ends only the calling thread. the main thread ending its thread ends the process.
+void proc_thread_exit(int code) {
+    proc_t* p = g_cur;
+    if (!p->is_thread) proc_exit(code);
+
+    uint32_t fl = irq_save();
+    p->exit_code = code;
+    p->state = PROC_ZOMBIE;
+    proc_wakeup(WAIT_THREAD);
+    sched();
+    (void)fl;
+    for (;;) __asm__ volatile("cli; hlt");
+}
+
+int proc_thread_join(int tid, int* code) {
     proc_t* me = g_cur;
+    for (;;) {
+        proc_t* t = 0;
+        for (int i = 1; i < NPROC; i++) {
+            proc_t* q = &g_procs[i];
+            if (q->pid == tid && q->is_thread && q != me && q->group == me->group && q->state != PROC_UNUSED) t = q;
+        }
+        if (!t) return -1;
+        if (t->state == PROC_ZOMBIE) {
+            if (code) *code = t->exit_code;
+            uint32_t fl = irq_save();
+            proc_release(t);
+            irq_restore(fl);
+            return tid;
+        }
+        uint32_t fl = irq_save();
+        if (sig_interrupting()) { irq_restore(fl); return -1; }
+        proc_sleep_on(WAIT_THREAD);
+        irq_restore(fl);
+    }
+}
+
+int proc_thread_create(uint32_t fn, uint32_t sp) {
+    proc_t* t = proc_alloc(1);
+    if (!t) return -1;
+    setup_user_frame(t->tf, fn, sp);
+    memcpy(t->name, g_cur->name, sizeof(t->name));
+
+    uint32_t fl = irq_save();
+    t->state = PROC_RUNNABLE;
+    irq_restore(fl);
+    return t->pid;
+}
+
+int proc_wait(int pid, int* status) {
+    proc_t* me = g_cur->group;
     for (;;) {
         int have_child = 0;
         for (int i = 1; i < NPROC; i++) {
             proc_t* c = &g_procs[i];
-            if (c->state == PROC_UNUSED || c->parent != me) continue;
+            if (c->state == PROC_UNUSED || c->is_thread || c->parent != me) continue;
             if (pid > 0 && c->pid != pid) continue;
             have_child = 1;
             if (c->state == PROC_ZOMBIE) {
@@ -259,8 +366,8 @@ int proc_wait(int pid, int* status) {
 
         uint32_t fl = irq_save();
         if (sig_interrupting()) { irq_restore(fl); return -1; }
-        me->chan = WAIT_CHILD;
-        me->state = PROC_SLEEPING;
+        g_cur->chan = WAIT_CHILD;
+        g_cur->state = PROC_SLEEPING;
         sched();
         irq_restore(fl);
     }
@@ -297,21 +404,22 @@ void proc_reap_orphans(void) {
 // entry for a user fd: vfs fd (>=0), FD_CONSOLE, or -1 if not open
 int proc_fd_get(int ufd) {
     if (ufd < 0 || ufd >= PROC_MAXFD) return -1;
-    return g_cur->fds[ufd] == -1 ? -1 : g_cur->fds[ufd];
+    return g_cur->group->fds[ufd] == -1 ? -1 : g_cur->group->fds[ufd];
 }
 
 // lowest free user fd holding `entry`, or -1
 int proc_fd_alloc(int entry) {
     for (int i = 0; i < PROC_MAXFD; i++) {
-        if (g_cur->fds[i] == -1) { g_cur->fds[i] = entry; return i; }
+        if (g_cur->group->fds[i] == -1) { g_cur->group->fds[i] = entry; return i; }
     }
     return -1;
 }
 
 int proc_fd_close(int ufd) {
-    if (ufd < 0 || ufd >= PROC_MAXFD || g_cur->fds[ufd] == -1) return -1;
-    if (g_cur->fds[ufd] >= 0) vfs_close(g_cur->fds[ufd]);
-    g_cur->fds[ufd] = -1;
+    proc_t* g = g_cur->group;
+    if (ufd < 0 || ufd >= PROC_MAXFD || g->fds[ufd] == -1) return -1;
+    if (g->fds[ufd] >= 0) vfs_close(g->fds[ufd]);
+    g->fds[ufd] = -1;
     return 0;
 }
 
@@ -321,19 +429,19 @@ int proc_fd_dup(int ofd, int nfd) {
     if (e == -1) return -1;
     if (nfd == ofd) return nfd;
     if (nfd < 0) {
-        for (nfd = 0; nfd < PROC_MAXFD && g_cur->fds[nfd] != -1; nfd++);
+        for (nfd = 0; nfd < PROC_MAXFD && g_cur->group->fds[nfd] != -1; nfd++);
         if (nfd >= PROC_MAXFD) return -1;
     } else {
         if (nfd >= PROC_MAXFD) return -1;
         proc_fd_close(nfd);
     }
     if (e >= 0) vfs_dup(e);
-    g_cur->fds[nfd] = e;
+    g_cur->group->fds[nfd] = e;
     return nfd;
 }
 
 int proc_brk(uint32_t addr) {
-    proc_t* p = g_cur;
+    proc_t* p = g_cur->group;       // the break is shared; pages go into the (shared) page tables
     if (addr == 0) return (int)p->brk;
     if (addr < USER_HEAP_BASE || addr > USER_HEAP_MAX) return -1;
 
@@ -342,14 +450,14 @@ int proc_brk(uint32_t addr) {
 
     for (uint32_t va = cur; va < top; va += PAGE_SIZE) {
         uint32_t f = (uint32_t)pmm_alloc_frame();
-        if (!f || paging_map_in(p->pd, va, f, P_USER | P_RW) < 0) {
+        if (!f || paging_map_in(g_cur->pd, va, f, P_USER | P_RW) < 0) {
             if (f) pmm_free_frame(f);
-            for (uint32_t u = cur; u < va; u += PAGE_SIZE) paging_unmap_in(p->pd, u);
+            for (uint32_t u = cur; u < va; u += PAGE_SIZE) paging_unmap_in(g_cur->pd, u);
             return -1;
         }
         memset((void*)f, 0, PAGE_SIZE);        // identity mapped
     }
-    for (uint32_t va = top; va < cur; va += PAGE_SIZE) paging_unmap_in(p->pd, va);
+    for (uint32_t va = top; va < cur; va += PAGE_SIZE) paging_unmap_in(g_cur->pd, va);
 
     p->brk = addr;
     return (int)addr;
@@ -363,11 +471,11 @@ int proc_count(void) {
 
 void proc_dump(void) {
     static const char* names[] = { "unused", "runnable", "running", "sleeping", "zombie" };
-    printf("PID PPID STATE    NAME\n");
+    printf("PID PPID GRP STATE    NAME\n");
     for (int i = 0; i < NPROC; i++) {
         proc_t* p = &g_procs[i];
         if (p->state == PROC_UNUSED) continue;
-        printf("%d   %d    %s  %s\n", p->pid, p->parent ? p->parent->pid : 0,
-               names[p->state], p->name);
+        printf("%d   %d    %d   %s  %s%s\n", p->pid, p->parent ? p->parent->pid : 0, p->group ? p->group->pid : 0,
+               names[p->state], p->name, p->is_thread ? " (thread)" : "");
     }
 }

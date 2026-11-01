@@ -3,7 +3,7 @@
 #include <arch/i386/isr.h>
 #include <arch/i386/paging.h>
 
-#define NPROC       16
+#define NPROC       32
 #define PROC_MAX_ARGS 16
 #define PROC_ARG_LEN  128
 #define PROC_MAXFD  16   /* fd table entry: vfs fd >= 0, FD_CONSOLE, or -1 (free) */
@@ -27,6 +27,9 @@ typedef struct proc {
     int            pid;
     proc_state_t   state;
     struct proc*   parent;
+    struct proc*   group;       // thread group leader (itself for a plain process); the group shares
+                                // pd, fds, cwd, brk and signal handlers, which live in the leader
+    int            is_thread;   // created by clone: reaped by thread_join, not waitpid
     int            exit_code;
     int            chan;        // what a SLEEPING proc waits for
     page_directory_t pd;
@@ -53,6 +56,8 @@ proc_t* proc_by_pid(int pid);   // live (non-zombie) process or 0
 #define WAIT_CHILD   0
 #define WAIT_CONSOLE 1
 #define WAIT_TIMER   2
+#define FUTEX_CHAN   0x2000   /* + 64 hash buckets */
+#define WAIT_THREAD  3   /* a thread exited: joiners re-check */
 
 int     proc_spawn(const char* path, char** argv, int argc);   // returns pid or -1
 int     proc_fork(regs_t* tf);                      // child pid to parent, child resumes with 0
@@ -65,6 +70,9 @@ void    proc_wakeup(int chan);
 int     proc_kernel_busy(void);                     // kernel context is blocked waiting on a child
 void    proc_reap_orphans(void);                    // kernel context: reap zombies nobody waits for
 int     proc_brk(uint32_t addr);                    // new break, or -1; addr 0 just queries
+int     proc_thread_create(uint32_t fn, uint32_t sp);   // new thread in the caller's group: its tid, or -1
+__attribute__((noreturn)) void proc_thread_exit(int code);
+int     proc_thread_join(int tid, int* code);           // tid, or -1 (no such thread in this group)
 int     proc_count(void);
 void    proc_dump(void);                            // for the shell's ps
 

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <pthread.h>
 
 typedef struct blk {
     size_t size;        // payload bytes, multiple of 8
@@ -15,6 +16,10 @@ typedef struct blk {
 #define HDR   sizeof(blk_t)
 #define ALIGN 8u
 #define GROW  16384u
+
+static volatile int g_lock;      // threads share the heap
+static void lock(void)   { while (__sync_lock_test_and_set(&g_lock, 1)) sched_yield(); }
+static void unlock(void) { __sync_lock_release(&g_lock); }
 
 static blk_t* g_head = 0;
 static blk_t* g_tail = 0;
@@ -46,7 +51,7 @@ static blk_t* grow(size_t need) {
     return b;
 }
 
-void* malloc(size_t size) {
+static void* malloc_locked(size_t size) {
     if (size == 0) size = 1;
     size = (size + ALIGN - 1) & ~(ALIGN - 1);
 
@@ -73,7 +78,7 @@ void* malloc(size_t size) {
     return (uint8_t*)b + HDR;
 }
 
-void free(void* p) {
+static void free_locked(void* p) {
     if (!p) return;
     blk_t* b = (blk_t*)((uint8_t*)p - HDR);
     b->free = 1;
@@ -90,6 +95,19 @@ void free(void* p) {
         a->next = b->next;
         if (b->next) b->next->prev = a; else g_tail = a;
     }
+}
+
+void* malloc(size_t size) {
+    lock();
+    void* p = malloc_locked(size);
+    unlock();
+    return p;
+}
+
+void free(void* p) {
+    lock();
+    free_locked(p);
+    unlock();
 }
 
 void* calloc(size_t n, size_t size) {

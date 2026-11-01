@@ -44,7 +44,7 @@ static int abs_path(const char* in, char* out, uint32_t max) {
     char tmp[2 * PROC_ARG_LEN];
     uint32_t n = 0;
     if (in[0] != '/') {
-        const char* cwd = proc_current()->cwd;
+        const char* cwd = proc_current()->group->cwd;
         for (; *cwd && n < sizeof(tmp) - 1; ) tmp[n++] = *cwd++;
         if (n && tmp[n - 1] != '/' && n < sizeof(tmp) - 1) tmp[n++] = '/';
     }
@@ -227,12 +227,12 @@ static void syscall_dispatch(regs_t* r) {
         char path[PROC_ARG_LEN];
         vfs_stat_t st;
         if (copy_user_path(path, r->ebx) < 0 || vfs_stat(path, &st) < 0 || !st.is_dir) { r->eax = (uint32_t)-1; return; }
-        strcpy(proc_current()->cwd, path);
+        strcpy(proc_current()->group->cwd, path);
         r->eax = 0;
         return;
     }
     case SYS_getcwd: {
-        const char* cwd = proc_current()->cwd;
+        const char* cwd = proc_current()->group->cwd;
         uint32_t n = strlen(cwd) + 1;
         if (n > r->ecx || !user_range_ok(r->ebx, n)) { r->eax = (uint32_t)-1; return; }
         memcpy((void*)r->ebx, cwd, n);
@@ -280,6 +280,48 @@ static void syscall_dispatch(regs_t* r) {
         while ((int32_t)(timer_ticks() - target) < 0) {
             if (sig_interrupting()) { rc = -1; break; }
             proc_sleep_on(WAIT_TIMER);
+        }
+        irq_restore(fl);
+        r->eax = (uint32_t)rc;
+        return;
+    }
+    case SYS_clone: {                       // ebx -> struct bob_clone {fn, arg, stack_top, exit_stub}
+        struct bob_clone* a = (struct bob_clone*)r->ebx;
+        if (!user_range_ok(r->ebx, sizeof(*a))) { r->eax = (uint32_t)-1; return; }
+        uint32_t sp = a->stack_top & ~3u;
+        if (!user_range_ok(sp - 8, 8) || a->fn < USER_LO || a->fn >= USER_HI) { r->eax = (uint32_t)-1; return; }
+        ((uint32_t*)sp)[-1] = a->arg;        // cdecl: fn(arg) returns into exit_stub
+        ((uint32_t*)sp)[-2] = a->exit_stub;
+        r->eax = (uint32_t)proc_thread_create(a->fn, sp - 8);
+        return;
+    }
+    case SYS_thread_exit:
+        proc_thread_exit((int)r->ebx);
+    case SYS_thread_join: {
+        int code = 0;
+        int rc = proc_thread_join((int)r->ebx, &code);
+        if (rc > 0 && r->ecx) {
+            if (user_range_ok(r->ecx, 4)) *(int*)r->ecx = code; else rc = -1;
+        }
+        r->eax = (uint32_t)rc;
+        return;
+    }
+    case SYS_gettid:
+        r->eax = (uint32_t)proc_current()->pid;
+        return;
+    case SYS_sched_yield:
+        proc_yield();
+        r->eax = 0;
+        return;
+    case SYS_futex: {                       // ebx = addr, ecx = op (0 wait, 1 wake), edx = value
+        if (!user_range_ok(r->ebx, 4) || (r->ebx & 3) || r->ecx > 1) { r->eax = (uint32_t)-1; return; }
+        int chan = FUTEX_CHAN + (int)((r->ebx >> 2) & 63);
+        if (r->ecx == 1) { proc_wakeup(chan); r->eax = 0; return; }
+        uint32_t fl = irq_save();
+        int rc = 0;
+        if (*(volatile int*)r->ebx == (int)r->edx) {      // still the value we were told: sleep
+            if (sig_interrupting()) rc = -1;
+            else proc_sleep_on(chan);
         }
         irq_restore(fl);
         r->eax = (uint32_t)rc;
