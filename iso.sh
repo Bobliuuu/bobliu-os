@@ -4,7 +4,7 @@ set -e
 
 # user programs, built with the bobliu toolchain wrapper
 ./toolchain/build.sh
-mkdir -p initrd/bin
+mkdir -p initrd/bin initrd/tmp
 for src in user/*.c; do
   prog=$(basename $src .c)
   ./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/$prog $src

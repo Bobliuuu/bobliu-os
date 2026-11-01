@@ -117,11 +117,13 @@ typedef struct {
 static int initrd_read(vnode_t* vn, uint32_t off, void* buf, uint32_t len);
 static int initrd_readdir(vnode_t* vn, uint32_t index, char* name_out, uint32_t name_max);
 static vnode_t* initrd_lookup(vnode_t* dir, const char* name);
+static void initrd_put(vnode_t* vn);
 
 static const vnode_ops_t g_ops = {
     .read = initrd_read,
     .readdir = initrd_readdir,
-    .lookup = initrd_lookup
+    .lookup = initrd_lookup,
+    .put = initrd_put
 };
 
 static vnode_t* g_root = 0;
@@ -143,6 +145,7 @@ static vnode_t* vnode_make_dir(const char* prefix) {
     vn->fs_data = dd;
     vn->size = 0;
     vn->is_dir = 1;
+    vn->refs = 0;
     return vn;
 }
 
@@ -152,6 +155,7 @@ static vnode_t* vnode_make_file(tar_hdr_t* h, uint32_t size) {
     vn->fs_data = h;  // points into tar image in memory
     vn->size = size;
     vn->is_dir = 0;
+    vn->refs = 0;
     return vn;
 }
 
@@ -163,6 +167,13 @@ void initrd_vfs_init(uintptr_t start, uintptr_t end) {
     //tar_hdr_t* h = (tar_hdr_t*)g_tar;
     //printf("tar[0] name='%s' prefix='%s'\n", h->name, h->prefix);
     //printf("tar[0] magic='%.5s'\n", h->magic);
+}
+
+// vnodes from lookup are heap copies; the root is permanent
+static void initrd_put(vnode_t* vn) {
+    if (!vn || vn == g_root) return;
+    if (vn->is_dir) kfree(vn->fs_data);     // dir_data; file fs_data points into the tar image
+    kfree(vn);
 }
 
 vnode_t* initrd_vfs_root(void) {

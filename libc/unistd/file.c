@@ -4,8 +4,15 @@
 #include <kernel/syscall.h>
 
 int open(const char* path, int flags) {
-    (void)flags;                       // read only for now
-    return __syscall3(SYS_open, (int)path, 0, 0);
+    return __syscall3(SYS_open, (int)path, flags, 0);
+}
+
+int unlink(const char* path) {
+    return __syscall3(SYS_unlink, (int)path, 0, 0);
+}
+
+int mkdir(const char* path) {
+    return __syscall3(SYS_mkdir, (int)path, 0, 0);
 }
 
 int close(int fd) {

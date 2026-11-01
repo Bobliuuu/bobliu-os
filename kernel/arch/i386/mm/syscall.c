@@ -36,8 +36,9 @@ static int copy_user_str(char* dst, uint32_t uptr, uint32_t max) {
 
 static int sys_write(uint32_t fd, const char* buf, uint32_t len) {
     int e = proc_fd_get((int)fd);
-    if (e != FD_CONSOLE) return -1;      // files are read-only for now
+    if (e == -1) return -1;
     if (!user_range_ok((uint32_t)buf, len)) return -1;
+    if (e >= 0) return vfs_write(e, buf, len);
     for (uint32_t i = 0; i < len; i++) putchar((unsigned char)buf[i]);
     return (int)len;
 }
@@ -76,7 +77,7 @@ void syscall_handle(regs_t* r) {
     case SYS_open: {
         char path[PROC_ARG_LEN];
         if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
-        int vfd = vfs_open(path);
+        int vfd = vfs_open_flags(path, (int)r->ecx);
         if (vfd < 0) { r->eax = (uint32_t)-1; return; }
         int ufd = proc_fd_alloc(vfd);
         if (ufd < 0) vfs_close(vfd);
@@ -93,6 +94,13 @@ void syscall_handle(regs_t* r) {
     case SYS_dup2:
         r->eax = (uint32_t)((int)r->ecx < 0 ? -1 : proc_fd_dup((int)r->ebx, (int)r->ecx));
         return;
+    case SYS_unlink:
+    case SYS_mkdir: {
+        char path[PROC_ARG_LEN];
+        if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
+        r->eax = (uint32_t)(r->eax == SYS_unlink ? vfs_unlink(path) : vfs_mkdir(path));
+        return;
+    }
     case SYS_lseek: {
         int vfd = proc_fd_get((int)r->ebx);
         r->eax = (uint32_t)(vfd < 0 ? -1 : vfs_seek(vfd, (int32_t)r->ecx, (int)r->edx));  // console fd -> -1

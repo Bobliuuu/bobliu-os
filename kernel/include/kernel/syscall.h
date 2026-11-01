@@ -15,7 +15,9 @@
 #define SYS_waitpid 7
 #define SYS_execve  11
 #define SYS_getpid  20
+#define SYS_unlink  10
 #define SYS_lseek   19
+#define SYS_mkdir   39
 #define SYS_dup     41
 #define SYS_brk     45   /* brk(addr): new break or -1; brk(0) queries */
 #define SYS_dup2    63

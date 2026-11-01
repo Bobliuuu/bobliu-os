@@ -14,6 +14,7 @@
 #include <kernel/initrd.h>
 #include <kernel/vfs.h>
 #include <kernel/initrd_vfs.h>
+#include <kernel/ramfs.h>
 #include <arch/i386/paging.h>
 #include <arch/i386/gdt.h>
 #include <arch/i386/tss.h>
@@ -111,6 +112,7 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 	if (mb1_find_module_by_string("initrd", &mod) == 0) {
 		initrd_vfs_init(mod.start, mod.end);
 		vfs_init(initrd_vfs_root());
+		vfs_mount("/tmp", ramfs_create_root());
 	} else {
 		printf("no initrd module\n");
 	}
