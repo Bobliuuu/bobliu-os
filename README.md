@@ -155,7 +155,7 @@ hand:
 | Program | What it does |
 |---|---|
 | `vi` | Lite vi editor (`vi <file>`): NORMAL/INSERT/`:` modes, h j k l and arrows, `0 $ gg G x dd o O i a A I u`, `:w :q :q! :wq :x`. Uses `tcsetraw` (raw console) and the ANSI subset of the VGA terminal |
-| `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Supports `> file` and `>> file` redirection of stdout (as separate words). Built-in: `exit` |
+| `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Supports `> file` and `>> file` redirection of stdout (as separate words). Built-ins: `cd`, `pwd`, `exit`. Reads its line in raw console mode (line editor, Tab completion, history, see below) |
 | `hello` | Prints a greeting, its pid and some libc output |
 | `echo` | Prints its arguments |
 | `cat` | `cat <file>...`: opens each file with `open`, copies it to stdout, prints `cat: <file>: cannot open` on failure |
@@ -167,6 +167,8 @@ hand:
 | `memtest` | `sbrk`/`brk`, `malloc`/`free` reuse and coalescing, `calloc`/`realloc`, copy-on-write heap after `fork`, children that grow the heap and exit |
 | `wtest` | Create/write/append/truncate on `/tmp`, initrd stays read-only, `mkdir`/`unlink`, unlink-while-open, shared fd writes across `fork`, create/delete churn |
 | `crash` | Checks that bad syscall arguments are rejected, a failed `execv` returns, and a NULL write kills only this process |
+
+**Shell line editor** (`user/sh.c`): the shell switches the console to raw mode (`tcsetraw(1)`) while reading a line and back to cooked before running a child, so children and Ctrl-C behave as before. Keys: printable chars insert at the cursor, Backspace, Delete, Left/Right, Home/End (Ctrl-A/Ctrl-E), Ctrl-U (kill text before the cursor), Ctrl-C (cancel line), Ctrl-D (exit on an empty line), Up/Down (last 16 lines of history), Enter. Tab completes the word under the cursor: builtins plus `/bin` for the first word (or after `|`), otherwise paths via `readdir_at` (directories get `/`, files a space). With several matches the common prefix is filled in and a second Tab lists them. The redraw uses `\b` as "cursor left" in the VGA terminal (`tty.c`). Lines are limited to 127 characters; a bare Esc key blocks until the next two bytes arrive.
 
 ## Shell reference
 

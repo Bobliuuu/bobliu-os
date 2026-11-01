@@ -117,6 +117,11 @@ static void terminal_putchar_raw(char c) {
 		terminal_column = 0;
 		return;
 	}
+	if (c == '\b') {                 // cursor left (wraps to the previous row), no erase
+		if (terminal_column > 0) terminal_column--;
+		else if (terminal_row > 0) { terminal_row--; terminal_column = VGA_WIDTH - 1; }
+		return;
+	}
 	unsigned char uc = c;
 	terminal_putentryat(uc, terminal_color, terminal_column, terminal_row);
 	if (++terminal_column == VGA_WIDTH) {
