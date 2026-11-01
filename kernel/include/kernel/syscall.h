@@ -28,6 +28,7 @@
 #define SYS_brk     45   /* brk(addr): new break or -1; brk(0) queries */
 #define SYS_dup2    63
 #define SYS_readdir 89   /* readdir(path, index, namebuf[128]) -> 1 / 0 at end / -1 */
+#define SYS_tcsetraw 200 /* tcsetraw(on): 1 = raw console (bytes, no echo), 0 = cooked; reset on exit */
 #define SYS_stat    106  /* stat(path, struct bob_stat*) */
 
 #ifndef __ASSEMBLER__

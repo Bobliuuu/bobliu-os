@@ -203,11 +203,14 @@ int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
     return 0;
 }
 
+void console_set_raw(int on);
+
 void proc_exit(int code) {
     proc_t* p = g_cur;
     if (p == KERNEL_PROC) { printf("proc_exit: kernel cannot exit\n"); for (;;) __asm__ volatile("hlt"); }
 
     fds_close_all(p);
+    console_set_raw(0);          // never leave the console raw behind a dead program
 
     uint32_t fl = irq_save();   // never restored: this context dies
 

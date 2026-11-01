@@ -12,6 +12,25 @@ static volatile uint32_t g_head = 0, g_tail = 0;   // read at tail, write at hea
 
 static uint32_t count(void) { return (g_head - g_tail) % CON_BUF; }
 
+static volatile int g_raw = 0;
+
+int console_is_raw(void) { return g_raw; }
+
+// raw mode: keys arrive as bytes with no echo / line editing; flushes pending input on every switch
+void console_set_raw(int on) {
+    uint32_t fl = irq_save();
+    g_raw = on ? 1 : 0;
+    g_tail = g_head;
+    irq_restore(fl);
+}
+
+// irq context, raw mode: one byte straight into the ring
+void console_push_byte(char c) {
+    if (count() >= CON_BUF - 1) return;
+    g_buf[g_head] = c; g_head = (g_head + 1) % CON_BUF;
+    proc_wakeup(WAIT_CONSOLE);
+}
+
 // irq context
 void console_push_line(const char* line) {
     uint32_t n = (uint32_t)strlen(line) + 1;          // + newline
@@ -34,7 +53,7 @@ int console_read(char* dst, int max) {
         char c = g_buf[g_tail];
         g_tail = (g_tail + 1) % CON_BUF;
         dst[n++] = c;
-        if (c == '\n') break;
+        if (c == '\n' && !g_raw) break;
     }
     irq_restore(fl);
     return n;
