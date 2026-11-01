@@ -110,7 +110,8 @@ Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
 | Real filesystems | #17 | Done (one) | `bobfs`; no FAT/ext2 |
 | Framebuffer + raw key events | #23 | Done | `fb_init()` gives a 640x480x32 linear framebuffer (qemu `-vga std`); `tcsetraw(2)` gives non-blocking raw scancodes with key up/down; demo `fbtest` |
 | libc stdio + extras | #24 | Done | `FILE` (fopen/fread/fwrite/fseek/fgets/fprintf...), vsnprintf with flags/width/precision/`ll`, sscanf, ctype, strtol/qsort/atexit/rand, strdup etc.; test `stdiotest` |
-| UI, networking, sound, USB | #19 (doom) | Open | doom still needs libc file stdio, WAD loading and a port |
+| Doom | #19 | Done | `doom`: doomgeneric port (vendored in `doom/src`), platform layer `doom/bobliu.c`; Freedoom IWAD in the initrd at `/share/freedoom1.wad`; framebuffer out, scancode keys in, no sound. ~60 fps under qemu |
+| UI, networking, sound, USB | - | Open | nothing started |
 
 
 ## Build and run
@@ -157,6 +158,7 @@ hand:
 
 | Program | What it does |
 |---|---|
+| `doom` | Doom (Freedoom). Arrows move/turn, Ctrl fire, Space use, Shift run, Alt strafe, `,` `.` strafe, 1-7 weapons, Esc menu. Extra args go to doom (`doom -warp 1 1 -skill 2`, `-fps` prints the average frame rate on quit). **The WAD is not in the repo**: download Freedoom (BSD, https://github.com/freedoom/freedoom/releases) and put `freedoom1.wad` in `doom/wad/` before `./iso.sh`; it ends up in the initrd (a ~28 MB module). Saves go to `/tmp` |
 | `fbtest` | Graphics demo: switches to 640x480, white square moves with held arrow keys, Esc returns to text mode |
 | `vi` | Lite vi editor (`vi <file>`): NORMAL/INSERT/`:` modes, h j k l and arrows, `0 $ gg G x dd o O i a A I u`, `:w :q :q! :wq :x`. Uses `tcsetraw` (raw console) and the ANSI subset of the VGA terminal |
 | `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Supports `> file` and `>> file` redirection of stdout (as separate words). Built-ins: `cd`, `pwd`, `exit`. Reads its line in raw console mode (line editor, Tab completion, history, see below) |

@@ -10,6 +10,9 @@ for src in user/*.c; do
   ./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/$prog $src
 done
 
+# doom (doomgeneric port); the iwad is picked up from doom/wad/
+./doom/build.sh
+
 mkdir -p isodir
 mkdir -p isodir/boot
 mkdir -p isodir/boot/grub

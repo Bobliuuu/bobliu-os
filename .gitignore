@@ -24,3 +24,6 @@ isodir/
 # user programs built by iso.sh
 initrd/bin/
 disk.img
+doom/build/
+doom/wad/
+initrd/share/
