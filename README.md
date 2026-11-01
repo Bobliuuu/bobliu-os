@@ -108,7 +108,8 @@ Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
 | Threads | #21 | Done | `clone`-style kernel threads in the leader's group (shared address space, fds, cwd, heap, signal handlers); `pthread_create/join/exit`, mutex, condition variable on a futex; no TLS, no SMP |
 | Secondary storage | #13 | Done | ATA PIO driver |
 | Real filesystems | #17 | Done (one) | `bobfs`; no FAT/ext2 |
-| Graphics, UI, networking, sound, USB | #19 (doom) | Open | doom needs a framebuffer, raw key up/down events and time first |
+| Framebuffer + raw key events | #23 | Done | `fb_init()` gives a 640x480x32 linear framebuffer (qemu `-vga std`); `tcsetraw(2)` gives non-blocking raw scancodes with key up/down; demo `fbtest` |
+| UI, networking, sound, USB | #19 (doom) | Open | doom still needs libc file stdio, WAD loading and a port |
 
 
 ## Build and run
@@ -155,6 +156,7 @@ hand:
 
 | Program | What it does |
 |---|---|
+| `fbtest` | Graphics demo: switches to 640x480, white square moves with held arrow keys, Esc returns to text mode |
 | `vi` | Lite vi editor (`vi <file>`): NORMAL/INSERT/`:` modes, h j k l and arrows, `0 $ gg G x dd o O i a A I u`, `:w :q :q! :wq :x`. Uses `tcsetraw` (raw console) and the ANSI subset of the VGA terminal |
 | `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Supports `> file` and `>> file` redirection of stdout (as separate words). Built-ins: `cd`, `pwd`, `exit`. Reads its line in raw console mode (line editor, Tab completion, history, see below) |
 | `hello` | Prints a greeting, its pid and some libc output |

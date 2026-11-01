@@ -18,7 +18,7 @@ int lseek(int fd, int offset, int whence);
 #define SEEK_CUR 1
 #define SEEK_END 2
 int read(int fd, void* buf, size_t count);   /* fd 0 only: line buffered console */
-int tcsetraw(int on);   /* 1: raw console (read gives bytes, no echo, ^C = byte 3), 0: cooked */
+int tcsetraw(int on);   /* 1: raw console (read gives bytes, no echo, ^C = byte 3), 0: cooked, 2: raw scancodes (see fb.h) */
 int brk(void* addr);
 void* sbrk(int incr);
 unsigned sleep(unsigned seconds);   /* returns seconds left if a signal cut it short (all of it, for now) */

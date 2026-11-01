@@ -151,6 +151,9 @@ void keyboard_irq(regs_t* r) {
     // Read scancode
     uint8_t sc = inb(0x60);
 
+    // scancode mode (games): hand every byte over untouched, e0 prefixes included
+    if (console_is_raw() == 2) { console_push_byte((char)sc); return; }
+
     // Handle 0xE0 extended prefix: for now, ignore next byte
     // (arrow keys, etc.). This keeps things simple and prevents weirdness.
     static bool e0 = false;

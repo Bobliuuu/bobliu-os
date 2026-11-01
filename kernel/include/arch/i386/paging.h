@@ -7,6 +7,7 @@
 #define P_RW      0x002u
 #define P_USER    0x004u
 #define P_COW     0x200u   /* software bit (PTE avl): write-protected because shared after fork */
+#define P_DEV     0x400u   /* software bit: device memory (framebuffer); no refcount, never freed, shared as-is on fork */
 
 #define PAGE_SIZE 0x1000u
 #define PDE_COUNT 1024u
@@ -24,6 +25,7 @@
 #define USER_STACK_PAGES 8u
 #define USER_HEAP_BASE  0x20000000u   /* brk() area: [HEAP_BASE, HEAP_MAX) */
 #define USER_HEAP_MAX   0x30000000u
+#define USER_FB_BASE    0x30000000u   /* framebuffer mapping (fb_init) */
 
 /* per-process kernel stacks live in their own shared region, each with an
    unmapped guard page below it (overflow faults instead of corrupting the heap) */

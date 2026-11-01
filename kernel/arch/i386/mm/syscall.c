@@ -9,6 +9,7 @@
 #include <kernel/signal.h>
 #include <arch/i386/timer.h>
 #include <arch/i386/irq.h>
+#include <arch/i386/fb.h>
 
 int console_read(char* dst, int max);
 void console_set_raw(int on);
@@ -154,6 +155,17 @@ static void syscall_dispatch(regs_t* r) {
         r->eax = 0;
         return;
     }
+    case SYS_fb_init: {
+        uint32_t info[5];
+        if (!user_range_ok(r->ebx, sizeof(info)) || fb_acquire(proc_current()->group, info) < 0) { r->eax = (uint32_t)-1; return; }
+        for (int i = 0; i < 5; i++) ((uint32_t*)r->ebx)[i] = info[i];
+        r->eax = 0;
+        return;
+    }
+    case SYS_fb_exit:
+        fb_release(proc_current()->group);
+        r->eax = 0;
+        return;
     case SYS_tcsetraw:
         console_set_raw((int)r->ebx);
         r->eax = 0;

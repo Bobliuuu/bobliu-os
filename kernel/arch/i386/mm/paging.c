@@ -224,7 +224,7 @@ void paging_unmap_in(page_directory_t dir, uint32_t vaddr) {
     uint32_t pte = pt[pte_index(vaddr)];
     if (!(pte & P_PRESENT)) return;
     pt[pte_index(vaddr)] = 0;
-    pmm_free_frame(pte & 0xFFFFF000u);
+    if (!(pte & P_DEV)) pmm_free_frame(pte & 0xFFFFF000u);
     asm volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
 }
 
@@ -266,7 +266,7 @@ void paging_free_user(page_directory_t dir, int free_pd) {
         if (!(pde & P_PRESENT)) continue;
         uint32_t* pt = (uint32_t*)(pde & 0xFFFFF000u);
         for (uint32_t i = 0; i < PTE_COUNT; i++) {
-            if (pt[i] & P_PRESENT) pmm_free_frame(pt[i] & 0xFFFFF000u);
+            if ((pt[i] & P_PRESENT) && !(pt[i] & P_DEV)) pmm_free_frame(pt[i] & 0xFFFFF000u);
         }
         pmm_free_frame((uintptr_t)pt);
         dir.pd_virt[pdi] = 0;
@@ -288,6 +288,8 @@ page_directory_t paging_clone_user(page_directory_t src) {
         for (uint32_t i = 0; i < PTE_COUNT; i++) {
             uint32_t pte = spt[i];
             if (!(pte & P_PRESENT)) continue;
+
+            if (pte & P_DEV) { dpt[i] = pte; continue; }   // framebuffer: shared, not cow
 
             // writable pages become read-only+cow in BOTH address spaces
             if (pte & P_RW) {

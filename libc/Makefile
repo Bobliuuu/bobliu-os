@@ -52,6 +52,7 @@ $(ARCH_HOSTEDOBJS) \
 unistd/write.o \
 unistd/read.o \
 unistd/tcsetraw.o \
+unistd/fb.o \
 unistd/file.o \
 unistd/getpid.o \
 unistd/fork.o \

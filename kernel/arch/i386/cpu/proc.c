@@ -241,6 +241,7 @@ int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
 }
 
 void console_set_raw(int on);
+#include <arch/i386/fb.h>
 
 // ends the whole process (every thread), like exit_group
 void proc_exit(int code) {
@@ -260,6 +261,7 @@ void proc_exit(int code) {
 
     fds_close_all(leader);
     console_set_raw(0);          // never leave the console raw behind a dead program
+    fb_release(leader);          // ...or the screen in graphics mode
 
     uint32_t fl = irq_save();   // never restored: this context dies
 

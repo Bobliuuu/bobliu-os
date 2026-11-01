@@ -19,7 +19,7 @@ int console_is_raw(void) { return g_raw; }
 // raw mode: keys arrive as bytes with no echo / line editing; flushes pending input on every switch
 void console_set_raw(int on) {
     uint32_t fl = irq_save();
-    g_raw = on ? 1 : 0;
+    g_raw = on;   // 1 = bytes, 2 = raw set-1 scancodes (bit 7 = release)
     g_tail = g_head;
     irq_restore(fl);
 }
@@ -44,6 +44,7 @@ void console_push_line(const char* line) {
 int console_read(char* dst, int max) {
     uint32_t fl = irq_save();
     while (count() == 0) {
+        if (g_raw == 2) { irq_restore(fl); return 0; }      // scancode mode never blocks
         if (sig_interrupting()) { irq_restore(fl); return -1; }
         proc_sleep_on(WAIT_CONSOLE);
     }
