@@ -497,8 +497,17 @@ Linux i386.
 | 6 | `SYS_close` | `ebx` = fd | closes any open fd (console fds too); 0, or -1 if not open |
 | 7 | `SYS_waitpid` | `ebx` = pid (or -1), `ecx` = `int*` status (may be 0), `edx` ignored | blocks until a matching child is a zombie; returns its pid and reaps it; -1 if there is no such child |
 | 10 | `SYS_unlink` | `ebx` = path | removes a file or an empty directory (writable filesystems only); 0 or -1 |
+| 12 | `SYS_chdir` | `ebx` = path | sets the cwd (must be a directory); 0 or -1 |
+| 13 | `SYS_time` | `ebx` = `time_t*` (may be 0) | unix seconds, UTC |
 | 11 | `SYS_execve` | `ebx` = path, `ecx` = `argv` (NULL-terminated, may be 0) | replaces the process image; returns only on failure (-1). Up to 16 args of 128 bytes; `envp` is not passed |
 | 19 | `SYS_lseek` | `ebx` = fd, `ecx` = offset, `edx` = whence (0 SET, 1 CUR, 2 END) | returns the new offset or -1 |
+| 37 | `SYS_kill` | `ebx` = pid, `ecx` = signal | queues a signal (0 only checks the process exists); 0 or -1 |
+| 42 | `SYS_pipe` | `ebx` = `int[2]` | creates a pipe: `[0]` read end, `[1]` write end |
+| 48 | `SYS_signal` | `ebx` = signal, `ecx` = handler (0 default, 1 ignore), `edx` = restorer | returns the old handler; `SIGKILL` can't be caught |
+| 119 | `SYS_sigreturn` | none | called by the libc stub when a handler returns; restores the interrupted registers |
+| 162 | `SYS_nanosleep` | `ebx` = `struct bob_timespec*` | sleeps in 10 ms ticks; -1 if a signal ended it early |
+| 183 | `SYS_getcwd` | `ebx` = buf, `ecx` = size | copies the cwd; returns its length including the NUL, or -1 |
+| 265 | `SYS_clock_gettime` | `ebx` = 0 wall / 1 since boot, `ecx` = `struct bob_timespec*` | 10 ms resolution |
 | 20 | `SYS_getpid` | none | the caller's pid |
 | 39 | `SYS_mkdir` | `ebx` = path | creates a directory (writable filesystems only); 0 or -1 |
 | 41 | `SYS_dup` | `ebx` = fd | another fd for the same open file (lowest free); -1 on error |
@@ -624,3 +633,12 @@ The VGA terminal understands a small ANSI subset (also for normal programs): `ES
 - `elf/elf.c` still redefines `USER_STACK_TOP` (as `0x02000000`) and `USER_STACK_PAGES` (4), conflicting with the `paging.h` values (`0x40000000`, 8) that the live loader uses.
 - `test.sh` and the stray top-level `hello`, `initrd_root/` and `initrd.tar` files are leftovers and not used by `iso.sh`.
 - `PF_TMP_PT_VA` (`0x00FF0000`) in `interrupts/page_fault.c` is only used by the kernel-fault page-table dump.
+
+
+## Later additions (issues #14-#17, #20)
+
+- **cwd**: `proc_t.cwd` (absolute, 128 bytes), inherited by `fork`/`exec`. The syscall layer turns every user path into an absolute one (`abs_path`: collapses `//`, `.`, `..`) before calling the VFS.
+- **pipes** (`fs/pipe.c`): a pipe is two vnodes (read end, write end) sharing a 4 KiB ring buffer, put in the normal open file table with `vfs_open_vnode`, so `dup`/`fork` refcounting works unchanged. Readers sleep on a per-pipe channel while it is empty and a writer exists; writers sleep when it is full; the last close of an end wakes the other side (EOF / `-1`).
+- **signals** (`cpu/signal.c`): `sig_pending`/`sig_mask`/`sig_handler[32]` per process. `sig_deliver` runs on every return to ring 3 (end of a syscall, end of an IRQ). The default action of every signal is terminate (exit code 128+sig). For a handler it pushes a `struct sigframe` (restorer address, signal number, old mask, saved registers) on the user stack and points `eip` at the handler, blocking that signal until `sigreturn`. Blocking calls (console `read`, pipe read/write, `waitpid`, `nanosleep`) check `sig_interrupting()` and return -1. `exec` resets caught handlers to default; ignored ones stay ignored. Ctrl-C (keyboard driver) calls `sig_broadcast(SIGINT)`.
+- **bobfs** (`fs/bobfs.c`): block 0 superblock, 1 inode bitmap, 2 data bitmap, then the inode table (64-byte inodes) and data. Directories are files of 32-byte `{ino, name[28]}` entries with `.` and `..` stored. Every operation reads and writes the disk directly (polled PIO, no cache). Vnodes live in a static per-inode table; unlinking an open file frees it on the last close. `mkfs` (kernel shell) formats and mounts; on later boots it mounts automatically when the superblock magic matches.
+- **time**: `dev/rtc.c` reads the CMOS clock once at boot (BCD/12-hour handled, two identical reads required); wall time is that plus PIT ticks, so it drifts like the PIT does and never re-reads the RTC. `nanosleep` sleeps on the timer channel, woken by the 100 Hz tick.

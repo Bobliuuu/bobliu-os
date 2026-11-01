@@ -50,7 +50,7 @@ roadmap. The honest status of each phase is below.
 - **File descriptors**: each process has a 16-entry fd table (`PROC_MAXFD`); fds 0-2 are the console, fds 3+ map to VFS files, and they are closed on exit. `fork` and `exec` inherit them (parent and child share the file offset), and `dup`/`dup2` work, including on the console fds, which is what the shell's `>` and `>>` use
 - **Syscalls**: `exit`, `fork`, `read`, `write`, `open`, `close`, `waitpid`, `execve`, `unlink`, `getpid`, `lseek`, `mkdir`, `dup`, `brk`, `dup2`, `readdir`, `stat`, numbered like Linux i386
 - **A small libc and toolchain slice**: `libc.a` (stdio `printf`/`puts`, string incl. `strcat`, `stdlib` `malloc`/`calloc`/`realloc`/`free` on top of `sbrk`, `fcntl.h`, `unistd` incl. `open`/`close`/`lseek`/`dup`/`unlink`, `sys/stat.h` `stat`, `dirent.h` `readdir_at`, `sys/wait.h`, `exit`/`abort`), `crt0.S`, a linker script and an `i686-bobliu-gcc` wrapper
-- **User programs** in `user/` (`sh`, `hello`, `echo`, `cat`, `ls`, `cp`, `rm`, `mkdir`, `hd`, and the tests `forktest`, `fdtest`, `memtest`, `wtest`, `crash`) built into `initrd/bin`
+- **User programs** in `user/` (`sh`, `hello`, `echo`, `cat`, `ls`, `cp`, `rm`, `mkdir`, `hd`, and the tests `forktest`, `fdtest`, `memtest`, `wtest`, `pipetest`, `sigtest`, `timetest`, `crash`), plus `wc`, `grep`, `date`, `sleep`, `vi` built into `initrd/bin`
 - **Kernel shell** with filesystem navigation, memory inspection, `ps` and `exec`
 
 ## Status and roadmap
@@ -89,9 +89,26 @@ Mapped to the OSDev wiki phases. Status is based on what is in the tree, not on 
 | Writable files | #12 | Done | ramfs mounted on `/tmp`; `open` flags (`O_CREAT`, `O_TRUNC`, `O_APPEND`), `write`, `unlink`, `mkdir`; shell `>` and `>>`; `cp`, `rm`, `mkdir` |
 | Disk driver | #13 | Done | ATA PIO (LBA28) on the primary master, `/dev/hd0`; `hd` dumps it, `echo x > /dev/hd0` writes it |
 
-All GitHub issues (#1-#13) are done and there are no open issues. Phase II is complete.
+Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
 
-Still missing: a filesystem on the disk (the disk is raw bytes for now), `pipe`, a `chdir`/cwd for user processes, signals. Those start to overlap with Phase III.
+| Item | Issue | Notes |
+|---|---|---|
+| Working directory | #14 | `chdir`/`getcwd`, relative paths resolved in the kernel against a per-process cwd (inherited by `fork`/`exec`); `cd`, `pwd` in `sh` |
+| Pipes | #15 | `pipe` syscall (4 KiB ring buffer, blocking, EOF and broken-pipe handling); `a \| b \| c` in `sh`; `wc`, `grep` |
+| Signals | #16 | `kill`, `signal`, `sigreturn`; handlers run on the user stack, a signal interrupts blocking `read`/`waitpid`/pipe calls; Ctrl-C sends `SIGINT` to every user process that isn't ignoring it (the shell ignores it); no process groups |
+| On-disk filesystem | #17 | `bobfs` (1 KiB blocks, 128 inodes, 12 direct + 1 indirect block, write-through), mounted on `/disk`; run `mkfs` in the kernel shell once to format `disk.img` |
+| Lite vi | #18 | `/bin/vi`: raw console mode (`tcsetraw`), a small ANSI subset in the VGA terminal, normal/insert/`:` modes |
+
+### Phase III: extending the OS
+
+| Item | Issue | Status | Notes |
+|---|---|---|---|
+| Time | #20 | Done | CMOS RTC read at boot, wall clock = boot epoch + PIT ticks (100 Hz); `time`, `clock_gettime`, `nanosleep`; `sleep`, `usleep`, `gmtime_r`; `date`, `sleep` programs |
+| Threads | #21 | Open | |
+| Secondary storage | #13 | Done | ATA PIO driver |
+| Real filesystems | #17 | Done (one) | `bobfs`; no FAT/ext2 |
+| Graphics, UI, networking, sound, USB | #19 (doom) | Open | doom needs a framebuffer, raw key up/down events and time first |
+
 
 ## Build and run
 
@@ -254,8 +271,9 @@ build pipeline and the shells, with diagrams, plus a list of known limitations.
 
 ## Known limitations
 
-The short version (details in the architecture doc): only `/tmp` (RAM, lost at reboot, 256 KiB
-per file) and `/dev/hd0` are writable, the disk has no filesystem, there is no `pipe`, user
+The short version (details in the architecture doc): `/tmp` (RAM, lost at reboot, 256 KiB
+per file), `/disk` (bobfs, 268 KiB per file, 128 files, 27-character names, no cache or journal) and `/dev/hd0` are writable, there are no
+process groups or threads, user
 processes have no working directory (paths are absolute), at most 16 processes, 16 fds each, and
 16 arguments of 128 bytes, `envp` is ignored, stdin is one global console buffer, blocking
 happens only in `waitpid` and `read`, the pid 0 boot stack has no guard page, kernel-mode
