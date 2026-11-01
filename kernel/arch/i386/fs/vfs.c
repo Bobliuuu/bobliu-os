@@ -50,6 +50,7 @@ int vfs_open(const char* path) {
             g_fds[fd].used = 1;
             g_fds[fd].vn = vn;
             g_fds[fd].off = 0;
+            g_fds[fd].refs = 1;
             return fd;
         }
     }
@@ -67,9 +68,15 @@ int vfs_read(int fd, void* buf, uint32_t len) {
 }
 
 int vfs_close(int fd) {
-    if (fd < 0 || fd >= MAX_FD) return -1;
-    g_fds[fd].used = 0;
+    if (fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return -1;
+    if (--g_fds[fd].refs == 0) g_fds[fd].used = 0;
     return 0;
+}
+
+int vfs_dup(int fd) {
+    if (fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return -1;
+    g_fds[fd].refs++;
+    return fd;
 }
 
 int vfs_seek(int fd, int32_t off, int whence) {

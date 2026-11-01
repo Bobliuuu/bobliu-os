@@ -16,6 +16,8 @@
 #define SYS_execve  11
 #define SYS_getpid  20
 #define SYS_lseek   19
+#define SYS_dup     41
+#define SYS_dup2    63
 #define SYS_readdir 89   /* readdir(path, index, namebuf[128]) -> 1 / 0 at end / -1 */
 #define SYS_stat    106  /* stat(path, struct bob_stat*) */
 

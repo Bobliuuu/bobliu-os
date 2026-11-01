@@ -23,3 +23,11 @@ int stat(const char* path, struct stat* st) {
 int readdir_at(const char* path, int index, char name[DIRENT_NAME_MAX]) {
     return __syscall3(SYS_readdir, (int)path, index, (int)name);
 }
+
+int dup(int fd) {
+    return __syscall3(SYS_dup, fd, 0, 0);
+}
+
+int dup2(int oldfd, int newfd) {
+    return __syscall3(SYS_dup2, oldfd, newfd, 0);
+}

@@ -15,6 +15,8 @@ int lseek(int fd, int offset, int whence);
 #define SEEK_CUR 1
 #define SEEK_END 2
 int read(int fd, void* buf, size_t count);   /* fd 0 only: line buffered console */
+int dup(int fd);
+int dup2(int oldfd, int newfd);
 int getpid(void);
 int fork(void);
 int execv(const char* path, char* const argv[]);   /* argv is passed to main() */

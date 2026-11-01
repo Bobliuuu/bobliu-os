@@ -21,7 +21,7 @@ static int g_next_pid = 1;
 void proc_init(void) {
     memset(g_procs, 0, sizeof(g_procs));
     proc_t* k = KERNEL_PROC;
-    for (int f = 0; f < PROC_MAXFD; f++) k->fds[f] = -1;
+    for (int f = 0; f < PROC_MAXFD; f++) k->fds[f] = f < 3 ? FD_CONSOLE : -1;
     k->pid = 0;
     k->state = PROC_RUNNING;
     k->pd = paging_kernel_directory();
@@ -40,7 +40,11 @@ static proc_t* proc_alloc(void) {
         if (!ks) return 0;
 
         memset(p, 0, sizeof(*p));
-        for (int f = 0; f < PROC_MAXFD; f++) p->fds[f] = -1;
+        // children share the parent's open files (same offset, like unix)
+        for (int f = 0; f < PROC_MAXFD; f++) {
+            p->fds[f] = g_cur->fds[f];
+            if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
+        }
         p->pid = g_next_pid++;
         p->kstack = ks;
         p->parent = g_cur;
@@ -57,7 +61,15 @@ static proc_t* proc_alloc(void) {
     return 0;
 }
 
+static void fds_close_all(proc_t* p) {
+    for (int i = 0; i < PROC_MAXFD; i++) {
+        if (p->fds[i] >= 0) vfs_close(p->fds[i]);
+        p->fds[i] = -1;
+    }
+}
+
 static void proc_release(proc_t* p) {
+    fds_close_all(p);
     kstack_free((uint32_t)(p - g_procs));
     p->kstack = 0;
     p->state = PROC_UNUSED;
@@ -178,9 +190,7 @@ void proc_exit(int code) {
     proc_t* p = g_cur;
     if (p == KERNEL_PROC) { printf("proc_exit: kernel cannot exit\n"); for (;;) __asm__ volatile("hlt"); }
 
-    for (int i = 3; i < PROC_MAXFD; i++) {
-        if (p->fds[i] >= 0) { vfs_close(p->fds[i]); p->fds[i] = -1; }
-    }
+    fds_close_all(p);
 
     uint32_t fl = irq_save();   // never restored: this context dies
 
@@ -263,20 +273,42 @@ void proc_reap_orphans(void) {
     }
 }
 
-int proc_fd_alloc(int vfs_fd) {
-    for (int i = 3; i < PROC_MAXFD; i++) {
-        if (g_cur->fds[i] < 0) { g_cur->fds[i] = vfs_fd; return i; }
+// entry for a user fd: vfs fd (>=0), FD_CONSOLE, or -1 if not open
+int proc_fd_get(int ufd) {
+    if (ufd < 0 || ufd >= PROC_MAXFD) return -1;
+    return g_cur->fds[ufd] == -1 ? -1 : g_cur->fds[ufd];
+}
+
+// lowest free user fd holding `entry`, or -1
+int proc_fd_alloc(int entry) {
+    for (int i = 0; i < PROC_MAXFD; i++) {
+        if (g_cur->fds[i] == -1) { g_cur->fds[i] = entry; return i; }
     }
     return -1;
 }
 
-int proc_fd_get(int ufd) {
-    if (ufd < 3 || ufd >= PROC_MAXFD) return -1;
-    return g_cur->fds[ufd];
+int proc_fd_close(int ufd) {
+    if (ufd < 0 || ufd >= PROC_MAXFD || g_cur->fds[ufd] == -1) return -1;
+    if (g_cur->fds[ufd] >= 0) vfs_close(g_cur->fds[ufd]);
+    g_cur->fds[ufd] = -1;
+    return 0;
 }
 
-void proc_fd_free(int ufd) {
-    if (ufd >= 3 && ufd < PROC_MAXFD) g_cur->fds[ufd] = -1;
+// dup2: make `nfd` refer to the same open file as `ofd` (nfd < 0: lowest free)
+int proc_fd_dup(int ofd, int nfd) {
+    int e = proc_fd_get(ofd);
+    if (e == -1) return -1;
+    if (nfd == ofd) return nfd;
+    if (nfd < 0) {
+        for (nfd = 0; nfd < PROC_MAXFD && g_cur->fds[nfd] != -1; nfd++);
+        if (nfd >= PROC_MAXFD) return -1;
+    } else {
+        if (nfd >= PROC_MAXFD) return -1;
+        proc_fd_close(nfd);
+    }
+    if (e >= 0) vfs_dup(e);
+    g_cur->fds[nfd] = e;
+    return nfd;
 }
 
 int proc_count(void) {

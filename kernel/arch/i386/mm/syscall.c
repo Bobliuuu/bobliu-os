@@ -35,7 +35,8 @@ static int copy_user_str(char* dst, uint32_t uptr, uint32_t max) {
 }
 
 static int sys_write(uint32_t fd, const char* buf, uint32_t len) {
-    if (fd != 1 && fd != 2) return -1;
+    int e = proc_fd_get((int)fd);
+    if (e != FD_CONSOLE) return -1;      // files are read-only for now
     if (!user_range_ok((uint32_t)buf, len)) return -1;
     for (uint32_t i = 0; i < len; i++) putchar((unsigned char)buf[i]);
     return (int)len;
@@ -65,12 +66,11 @@ void syscall_handle(regs_t* r) {
     }
     case SYS_read: {
         if (!user_range_ok(r->ecx, r->edx)) { r->eax = (uint32_t)-1; return; }
-        if (r->ebx == 0) {                       // stdin: the console
+        int e = proc_fd_get((int)r->ebx);
+        if (e == FD_CONSOLE)
             r->eax = (uint32_t)console_read((char*)r->ecx, (int)r->edx);
-        } else {
-            int vfd = proc_fd_get((int)r->ebx);
-            r->eax = (uint32_t)(vfd < 0 ? -1 : vfs_read(vfd, (void*)r->ecx, r->edx));
-        }
+        else
+            r->eax = (uint32_t)(e < 0 ? -1 : vfs_read(e, (void*)r->ecx, r->edx));
         return;
     }
     case SYS_open: {
@@ -84,16 +84,18 @@ void syscall_handle(regs_t* r) {
         return;
     }
     case SYS_close: {
-        int vfd = proc_fd_get((int)r->ebx);
-        if (vfd < 0) { r->eax = (uint32_t)-1; return; }
-        vfs_close(vfd);
-        proc_fd_free((int)r->ebx);
-        r->eax = 0;
+        r->eax = (uint32_t)proc_fd_close((int)r->ebx);
         return;
     }
+    case SYS_dup:
+        r->eax = (uint32_t)proc_fd_dup((int)r->ebx, -1);
+        return;
+    case SYS_dup2:
+        r->eax = (uint32_t)((int)r->ecx < 0 ? -1 : proc_fd_dup((int)r->ebx, (int)r->ecx));
+        return;
     case SYS_lseek: {
         int vfd = proc_fd_get((int)r->ebx);
-        r->eax = (uint32_t)(vfd < 0 ? -1 : vfs_seek(vfd, (int32_t)r->ecx, (int)r->edx));
+        r->eax = (uint32_t)(vfd < 0 ? -1 : vfs_seek(vfd, (int32_t)r->ecx, (int)r->edx));  // console fd -> -1
         return;
     }
     case SYS_stat: {

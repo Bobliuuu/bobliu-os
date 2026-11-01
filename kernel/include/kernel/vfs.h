@@ -26,6 +26,7 @@ typedef struct {
     vnode_t* vn;
     uint32_t off;
     uint8_t  used;
+    uint8_t  refs;     // dup/fork share one open file; closed when this hits 0
 } file_t;
 
 typedef struct {
@@ -38,6 +39,7 @@ void vfs_init(vnode_t* root);
 int  vfs_open(const char* path);
 int  vfs_read(int fd, void* buf, uint32_t len);
 int  vfs_close(int fd);
+int  vfs_dup(int fd);                              // another reference to the same open file
 int  vfs_seek(int fd, int32_t off, int whence);   // 0=SET 1=CUR 2=END, returns new offset or -1
 // index-th entry name of directory path: 1 = written, 0 = end, <0 error
 int  vfs_readdir_path(const char* path, uint32_t index, char* name_out, uint32_t name_max);
