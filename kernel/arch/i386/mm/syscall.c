@@ -6,6 +6,7 @@
 #include <kernel/proc.h>
 #include <kernel/vfs.h>
 #include <kernel/pipe.h>
+#include <kernel/signal.h>
 
 int console_read(char* dst, int max);
 
@@ -87,7 +88,7 @@ static int sys_write(uint32_t fd, const char* buf, uint32_t len) {
     return (int)len;
 }
 
-void syscall_handle(regs_t* r) {
+static void syscall_dispatch(regs_t* r) {
     proc_current()->tf = r;
 
     switch (r->eax) {
@@ -231,6 +232,17 @@ void syscall_handle(regs_t* r) {
         r->eax = n;
         return;
     }
+    case SYS_kill: {
+        proc_t* t = proc_by_pid((int)r->ebx);
+        r->eax = (uint32_t)(t ? sig_send(t, (int)r->ecx) : -1);
+        return;
+    }
+    case SYS_signal:
+        r->eax = (uint32_t)sig_set((int)r->ebx, r->ecx, r->edx);
+        return;
+    case SYS_sigreturn:
+        sig_return(r);
+        return;
     case SYS_getpid:
         r->eax = (uint32_t)proc_current()->pid;
         return;
@@ -238,4 +250,9 @@ void syscall_handle(regs_t* r) {
         r->eax = (uint32_t)-1;
         return;
     }
+}
+
+void syscall_handle(regs_t* r) {
+    syscall_dispatch(r);
+    if (r->cs & 3) sig_deliver(r);       // about to return to ring 3
 }

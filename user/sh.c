@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/wait.h>
 
 #define MAXARGS   16
@@ -36,6 +37,7 @@ static void run(int nstages, const char* redir, int append) {
         int pid = fork();
         if (pid < 0) { printf("sh: fork failed\n"); break; }
         if (pid == 0) {
+            signal(SIGINT, SIG_DFL);                 // ctrl-c should kill what we run, not the shell
             if (prev >= 0) { dup2(prev, 0); close(prev); }
             if (!last) { dup2(p[1], 1); close(p[0]); close(p[1]); }
             if (last && redir) {
@@ -61,6 +63,7 @@ static void run(int nstages, const char* redir, int append) {
 int main(void) {
     char line[128];
 
+    signal(SIGINT, SIG_IGN);
     printf("bobliu sh (pid %d). commands live in /bin; 'exit' leaves.\n", getpid());
     for (;;) {
         { char cwd[128]; printf("%s $ ", getcwd(cwd, sizeof(cwd)) ? cwd : "?"); }

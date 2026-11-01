@@ -19,6 +19,9 @@
 #define SYS_getpid  20
 #define SYS_unlink  10
 #define SYS_lseek   19
+#define SYS_kill    37
+#define SYS_signal  48   /* signal(sig, handler, restorer) -> old handler; 0 = default, 1 = ignore */
+#define SYS_sigreturn 119
 #define SYS_mkdir   39
 #define SYS_dup     41
 #define SYS_pipe    42   /* pipe(int fds[2]): fds[0] read end, fds[1] write end */

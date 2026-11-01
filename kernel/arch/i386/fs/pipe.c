@@ -2,6 +2,7 @@
 // readers sleep while it is empty and a writer still exists, writers while it is full.
 #include <kernel/pipe.h>
 #include <kernel/proc.h>
+#include <kernel/signal.h>
 #include <kernel/heap.h>
 #include <arch/i386/irq.h>
 #include <string.h>
@@ -45,6 +46,7 @@ static int pipe_read(vnode_t* vn, uint32_t off, void* buf, uint32_t len) {
     uint32_t fl = irq_save();
     while (p->count == 0) {
         if (!p->writers_open) { irq_restore(fl); return 0; }      // EOF
+        if (sig_interrupting()) { irq_restore(fl); return -1; }
         proc_sleep_on(chan(p));
     }
     uint32_t n = len < p->count ? len : p->count;
@@ -66,7 +68,11 @@ static int pipe_write(vnode_t* vn, uint32_t off, const void* buf, uint32_t len) 
     uint32_t fl = irq_save();
     while (done < len) {
         if (!p->readers_open) { irq_restore(fl); return done ? (int)done : -1; }   // broken pipe
-        if (p->count == PIPE_BUF) { proc_sleep_on(chan(p)); continue; }
+        if (p->count == PIPE_BUF) {
+            if (sig_interrupting()) { irq_restore(fl); return done ? (int)done : -1; }
+            proc_sleep_on(chan(p));
+            continue;
+        }
         uint32_t n = PIPE_BUF - p->count;
         if (n > len - done) n = len - done;
         for (uint32_t i = 0; i < n; i++) p->buf[(p->head + p->count + i) % PIPE_BUF] = in[done + i];

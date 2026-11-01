@@ -2,6 +2,7 @@
 #include <arch/i386/isr.h>
 #include <arch/i386/portio.h>
 #include <kernel/proc.h>
+#include <kernel/signal.h>
 #include <stdio.h>
 
 void page_fault_handler(regs_t* r);
@@ -67,4 +68,6 @@ void irq_handler(regs_t* r) {
     if (irq >= 0 && irq < 16 && irq_routines[irq]) {
         irq_routines[irq](r);
     }
+
+    if (r->cs & 3) sig_deliver(r);       // back to ring 3: run pending signals
 }

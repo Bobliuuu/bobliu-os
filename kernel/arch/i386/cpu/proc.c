@@ -5,6 +5,7 @@
 #include <kernel/proc.h>
 #include <kernel/heap.h>
 #include <kernel/vfs.h>
+#include <kernel/signal.h>
 #include <arch/i386/pmm.h>
 #include <arch/i386/paging.h>
 #include <arch/i386/tss.h>
@@ -32,6 +33,12 @@ void proc_init(void) {
 }
 
 proc_t* proc_current(void) { return g_cur; }
+proc_t* proc_by_slot(int i) { return i >= 0 && i < NPROC ? &g_procs[i] : 0; }
+proc_t* proc_by_pid(int pid) {
+    for (int i = 1; i < NPROC; i++)
+        if (g_procs[i].state != PROC_UNUSED && g_procs[i].state != PROC_ZOMBIE && g_procs[i].pid == pid) return &g_procs[i];
+    return 0;
+}
 
 static proc_t* proc_alloc(void) {
     for (int i = 1; i < NPROC; i++) {
@@ -48,6 +55,9 @@ static proc_t* proc_alloc(void) {
             if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
         }
         strcpy(p->cwd, g_cur->cwd);
+        memcpy(p->sig_handler, g_cur->sig_handler, sizeof(p->sig_handler));
+        p->sig_restorer = g_cur->sig_restorer;
+        p->sig_mask = g_cur->sig_mask;
         p->pid = g_next_pid++;
         p->kstack = ks;
         p->parent = g_cur;
@@ -182,6 +192,7 @@ int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
 
     p->pd = npd;
     p->brk = USER_HEAP_BASE;
+    sig_exec_reset(p);
     paging_load(npd);
     paging_free_user(old, 1);
 
@@ -244,6 +255,7 @@ int proc_wait(int pid, int* status) {
         if (!have_child) return -1;
 
         uint32_t fl = irq_save();
+        if (sig_interrupting()) { irq_restore(fl); return -1; }
         me->chan = WAIT_CHILD;
         me->state = PROC_SLEEPING;
         sched();

@@ -35,6 +35,9 @@ typedef struct proc {
     regs_t*        tf;          // trap frame of the current syscall/irq
     uint32_t       brk;         // end of the user heap (starts at USER_HEAP_BASE)
     int            fds[PROC_MAXFD];   // user fd -> vfs fd / FD_CONSOLE / -1; inherited by fork and exec
+    uint32_t       sig_pending, sig_mask;
+    uint32_t       sig_handler[32];     // 0 default, 1 ignore, else user address
+    uint32_t       sig_restorer;        // libc stub the handler returns to
     char           cwd[PROC_ARG_LEN];   // absolute; inherited by fork/exec
     char           name[16];
 } proc_t;
@@ -45,6 +48,8 @@ int     proc_fd_get(int ufd);           // vfs fd, FD_CONSOLE or -1
 int     proc_fd_close(int ufd);
 int     proc_fd_dup(int ofd, int nfd);  // dup2 (nfd < 0: dup)
 proc_t* proc_current(void);
+proc_t* proc_by_slot(int i);
+proc_t* proc_by_pid(int pid);   // live (non-zombie) process or 0
 #define WAIT_CHILD   0
 #define WAIT_CONSOLE 1
 

@@ -7,6 +7,7 @@
 #include <kernel/user_exec.h>
 #include <arch/i386/keyboard.h>
 #include <kernel/proc.h>
+#include <kernel/signal.h>
 #include <arch/i386/isr.h>
 #include <arch/i386/portio.h>
 #include <arch/i386/paging.h>
@@ -56,6 +57,7 @@ static int cmd_cat(int argc, char** argv);
 static int cmd_hexdump(int argc, char** argv);
 static int cmd_exec(int argc, char** argv);
 static int cmd_ps(int argc, char** argv);
+static int cmd_kill(int argc, char** argv);
 
 static const cmd_t cmds[] = {
     { "help",    cmd_help },
@@ -72,6 +74,7 @@ static const cmd_t cmds[] = {
     { "hexdump", cmd_hexdump },
     { "exec", cmd_exec },
     { "ps",      cmd_ps },
+    { "kill",    cmd_kill },
     { "panic",   cmd_panic },
 };
 static const int cmd_count = (int)(sizeof(cmds)/sizeof(cmds[0]));
@@ -373,6 +376,16 @@ static int cmd_exec(int argc, char** argv) {
     int status = 0;
     proc_wait(pid, &status);
     if (status) printf("[pid %d exited with %d]\n", pid, (status >> 8) & 0xFF);
+    return 0;
+}
+
+static int cmd_kill(int argc, char** argv) {
+    if (argc < 2) { printf("usage: kill <pid> [sig]\n"); return 1; }
+    int pid = 0, sig = SIGTERM;
+    for (const char* c = argv[1]; *c >= '0' && *c <= '9'; c++) pid = pid * 10 + (*c - '0');
+    if (argc > 2) { sig = 0; for (const char* c = argv[2]; *c >= '0' && *c <= '9'; c++) sig = sig * 10 + (*c - '0'); }
+    proc_t* t = proc_by_pid(pid);
+    if (!t || sig_send(t, sig) < 0) { printf("kill: no such process or bad signal\n"); return 1; }
     return 0;
 }
 

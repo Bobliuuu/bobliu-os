@@ -60,6 +60,7 @@ unistd/_exit.o \
 stdlib/exit.o \
 stdlib/malloc.o \
 unistd/brk.o \
+unistd/signal.o \
 
 OBJS=\
 $(FREEOBJS) \

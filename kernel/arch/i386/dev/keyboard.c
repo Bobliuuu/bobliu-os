@@ -1,5 +1,6 @@
 // arch/i386/dev/keyboard.c
 #include <stdint.h>
+#include <kernel/signal.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -34,6 +35,7 @@ static int  line_len = 0;
 
 static volatile bool g_shift = false;
 static volatile bool g_caps  = false;
+static volatile bool g_ctrl  = false;
 
 static bool shell_enabled = false;
 
@@ -134,6 +136,10 @@ void keyboard_irq(regs_t* r) {
         g_shift = !released;
         return;
     }
+    if (sc == 0x1D) {                      // left ctrl
+        g_ctrl = !released;
+        return;
+    }
     if (sc == SC_CAPS) {
         if (!released) g_caps = !g_caps;
         return;
@@ -141,6 +147,14 @@ void keyboard_irq(regs_t* r) {
 
     // Only act on key press (make), ignore releases for normal keys
     if (released) return;
+
+    // ctrl-c: drop the line being typed and interrupt user programs
+    if (g_ctrl && sc == 0x2E) {
+        terminal_putchar('^'); terminal_putchar('C'); terminal_putchar('\n');
+        line_reset();
+        sig_broadcast(SIGINT);
+        return;
+    }
 
     // Special keys
     if (sc == SC_ENTER) {

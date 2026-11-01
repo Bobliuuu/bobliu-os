@@ -1,4 +1,5 @@
 // stdin for user programs: the keyboard irq pushes finished lines here
+#include <kernel/signal.h>
 #include <stdint.h>
 #include <string.h>
 #include <kernel/proc.h>
@@ -23,7 +24,10 @@ void console_push_line(const char* line) {
 // blocks until at least one full line is available, returns up to max bytes
 int console_read(char* dst, int max) {
     uint32_t fl = irq_save();
-    while (count() == 0) proc_sleep_on(WAIT_CONSOLE);
+    while (count() == 0) {
+        if (sig_interrupting()) { irq_restore(fl); return -1; }
+        proc_sleep_on(WAIT_CONSOLE);
+    }
 
     int n = 0;
     while (n < max && count() > 0) {
