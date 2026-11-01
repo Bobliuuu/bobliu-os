@@ -34,6 +34,49 @@ static int copy_user_str(char* dst, uint32_t uptr, uint32_t max) {
     return -1;
 }
 
+// make `in` absolute against the caller's cwd, collapsing //, . and ..
+static int abs_path(const char* in, char* out, uint32_t max) {
+    char tmp[2 * PROC_ARG_LEN];
+    uint32_t n = 0;
+    if (in[0] != '/') {
+        const char* cwd = proc_current()->cwd;
+        for (; *cwd && n < sizeof(tmp) - 1; ) tmp[n++] = *cwd++;
+        if (n && tmp[n - 1] != '/' && n < sizeof(tmp) - 1) tmp[n++] = '/';
+    }
+    for (; *in && n < sizeof(tmp) - 1; ) tmp[n++] = *in++;
+    tmp[n] = '\0';
+
+    uint32_t o = 0;
+    out[o++] = '/';
+    const char* p = tmp;
+    while (*p) {
+        while (*p == '/') p++;
+        if (!*p) break;
+        const char* c = p;
+        while (*p && *p != '/') p++;
+        uint32_t len = (uint32_t)(p - c);
+        if (len == 1 && c[0] == '.') continue;
+        if (len == 2 && c[0] == '.' && c[1] == '.') {
+            if (o > 1) {                    // drop the last component
+                while (out[o - 1] != '/') o--;
+                if (o > 1) o--;
+            }
+            continue;
+        }
+        if (o > 1) { if (o + 1 >= max) return -1; out[o++] = '/'; }
+        if (o + len >= max) return -1;
+        for (uint32_t i = 0; i < len; i++) out[o++] = c[i];
+    }
+    out[o] = '\0';
+    return 0;
+}
+
+static int copy_user_path(char* dst, uint32_t uptr) {
+    char raw[PROC_ARG_LEN];
+    if (copy_user_str(raw, uptr, sizeof(raw)) < 0) return -1;
+    return abs_path(raw, dst, PROC_ARG_LEN);
+}
+
 static int sys_write(uint32_t fd, const char* buf, uint32_t len) {
     int e = proc_fd_get((int)fd);
     if (e == -1) return -1;
@@ -76,7 +119,7 @@ void syscall_handle(regs_t* r) {
     }
     case SYS_open: {
         char path[PROC_ARG_LEN];
-        if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
+        if (copy_user_path(path, r->ebx) < 0) { r->eax = (uint32_t)-1; return; }
         int vfd = vfs_open_flags(path, (int)r->ecx);
         if (vfd < 0) { r->eax = (uint32_t)-1; return; }
         int ufd = proc_fd_alloc(vfd);
@@ -97,7 +140,7 @@ void syscall_handle(regs_t* r) {
     case SYS_unlink:
     case SYS_mkdir: {
         char path[PROC_ARG_LEN];
-        if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
+        if (copy_user_path(path, r->ebx) < 0) { r->eax = (uint32_t)-1; return; }
         r->eax = (uint32_t)(r->eax == SYS_unlink ? vfs_unlink(path) : vfs_mkdir(path));
         return;
     }
@@ -109,7 +152,7 @@ void syscall_handle(regs_t* r) {
     case SYS_stat: {
         char path[PROC_ARG_LEN];
         vfs_stat_t st;
-        if (copy_user_str(path, r->ebx, sizeof(path)) < 0 || !user_range_ok(r->ecx, sizeof(struct bob_stat)) ||
+        if (copy_user_path(path, r->ebx) < 0 || !user_range_ok(r->ecx, sizeof(struct bob_stat)) ||
             vfs_stat(path, &st) < 0) { r->eax = (uint32_t)-1; return; }
         struct bob_stat* out = (struct bob_stat*)r->ecx;
         out->size = st.size;
@@ -120,7 +163,7 @@ void syscall_handle(regs_t* r) {
     case SYS_readdir: {
         char path[PROC_ARG_LEN];
         char name[128];
-        if (copy_user_str(path, r->ebx, sizeof(path)) < 0 || !user_range_ok(r->edx, sizeof(name))) {
+        if (copy_user_path(path, r->ebx) < 0 || !user_range_ok(r->edx, sizeof(name))) {
             r->eax = (uint32_t)-1; return;
         }
         int rc = vfs_readdir_path(path, r->ecx, name, sizeof(name));
@@ -133,7 +176,7 @@ void syscall_handle(regs_t* r) {
         char args[PROC_MAX_ARGS][PROC_ARG_LEN];
         char* argv[PROC_MAX_ARGS];
         int argc = 0;
-        if (copy_user_str(path, r->ebx, sizeof(path)) < 0) { r->eax = (uint32_t)-1; return; }
+        if (copy_user_path(path, r->ebx) < 0) { r->eax = (uint32_t)-1; return; }
 
         if (r->ecx) {
             for (; argc < PROC_MAX_ARGS; argc++) {
@@ -153,6 +196,22 @@ void syscall_handle(regs_t* r) {
     case SYS_brk:
         r->eax = (uint32_t)proc_brk(r->ebx);
         return;
+    case SYS_chdir: {
+        char path[PROC_ARG_LEN];
+        vfs_stat_t st;
+        if (copy_user_path(path, r->ebx) < 0 || vfs_stat(path, &st) < 0 || !st.is_dir) { r->eax = (uint32_t)-1; return; }
+        strcpy(proc_current()->cwd, path);
+        r->eax = 0;
+        return;
+    }
+    case SYS_getcwd: {
+        const char* cwd = proc_current()->cwd;
+        uint32_t n = strlen(cwd) + 1;
+        if (n > r->ecx || !user_range_ok(r->ebx, n)) { r->eax = (uint32_t)-1; return; }
+        memcpy((void*)r->ebx, cwd, n);
+        r->eax = n;
+        return;
+    }
     case SYS_getpid:
         r->eax = (uint32_t)proc_current()->pid;
         return;

@@ -10,6 +10,8 @@ extern "C" {
 int write(int fd, const void* buf, size_t count);
 int open(const char* path, int flags);
 int close(int fd);
+int chdir(const char* path);
+char* getcwd(char* buf, size_t size);
 int unlink(const char* path);   /* files and empty directories */
 int lseek(int fd, int offset, int whence);
 #define SEEK_SET 0

@@ -4,6 +4,8 @@
 #include <arch/i386/paging.h>
 
 #define NPROC       16
+#define PROC_MAX_ARGS 16
+#define PROC_ARG_LEN  128
 #define PROC_MAXFD  16   /* fd table entry: vfs fd >= 0, FD_CONSOLE, or -1 (free) */
 #define FD_CONSOLE  (-2)
 #define KSTACK_SIZE KSTACK_BYTES   /* see arch/i386/paging.h */
@@ -33,6 +35,7 @@ typedef struct proc {
     regs_t*        tf;          // trap frame of the current syscall/irq
     uint32_t       brk;         // end of the user heap (starts at USER_HEAP_BASE)
     int            fds[PROC_MAXFD];   // user fd -> vfs fd / FD_CONSOLE / -1; inherited by fork and exec
+    char           cwd[PROC_ARG_LEN];   // absolute; inherited by fork/exec
     char           name[16];
 } proc_t;
 
@@ -42,8 +45,6 @@ int     proc_fd_get(int ufd);           // vfs fd, FD_CONSOLE or -1
 int     proc_fd_close(int ufd);
 int     proc_fd_dup(int ofd, int nfd);  // dup2 (nfd < 0: dup)
 proc_t* proc_current(void);
-#define PROC_MAX_ARGS 16
-#define PROC_ARG_LEN  128
 #define WAIT_CHILD   0
 #define WAIT_CONSOLE 1
 

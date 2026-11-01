@@ -38,3 +38,11 @@ int dup(int fd) {
 int dup2(int oldfd, int newfd) {
     return __syscall3(SYS_dup2, oldfd, newfd, 0);
 }
+
+int chdir(const char* path) {
+    return __syscall3(SYS_chdir, (int)path, 0, 0);
+}
+
+char* getcwd(char* buf, size_t size) {
+    return __syscall3(SYS_getcwd, (int)buf, (int)size, 0) < 0 ? 0 : buf;
+}

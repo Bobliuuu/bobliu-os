@@ -14,6 +14,8 @@
 #define SYS_close   6
 #define SYS_waitpid 7
 #define SYS_execve  11
+#define SYS_chdir   12
+#define SYS_getcwd  183  /* getcwd(buf, size) -> length incl. NUL, or -1 */
 #define SYS_getpid  20
 #define SYS_unlink  10
 #define SYS_lseek   19

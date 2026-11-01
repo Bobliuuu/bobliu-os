@@ -42,7 +42,7 @@ int main(void) {
 
     printf("bobliu sh (pid %d). commands live in /bin; 'exit' leaves.\n", getpid());
     for (;;) {
-        printf("$ ");
+        { char cwd[128]; printf("%s $ ", getcwd(cwd, sizeof(cwd)) ? cwd : "?"); }
         int n = read(0, line, sizeof(line) - 1);
         if (n <= 0) break;
         line[n] = '\0';
@@ -78,6 +78,15 @@ int main(void) {
         if (argc == 0) continue;
 
         if (strcmp(argv[0], "exit") == 0) break;
+        if (strcmp(argv[0], "cd") == 0) {
+            if (chdir(argc > 1 ? argv[1] : "/") < 0) printf("cd: %s: not a directory\n", argc > 1 ? argv[1] : "/");
+            continue;
+        }
+        if (strcmp(argv[0], "pwd") == 0) {
+            char cwd[128];
+            if (getcwd(cwd, sizeof(cwd))) printf("%s\n", cwd);
+            continue;
+        }
         run(argv, redir, append);
     }
     return 0;

@@ -24,6 +24,7 @@ void proc_init(void) {
     proc_t* k = KERNEL_PROC;
     for (int f = 0; f < PROC_MAXFD; f++) k->fds[f] = f < 3 ? FD_CONSOLE : -1;
     k->pid = 0;
+    strcpy(k->cwd, "/");
     k->state = PROC_RUNNING;
     k->pd = paging_kernel_directory();
     strcpy(k->name, "kernel");
@@ -46,6 +47,7 @@ static proc_t* proc_alloc(void) {
             p->fds[f] = g_cur->fds[f];
             if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
         }
+        strcpy(p->cwd, g_cur->cwd);
         p->pid = g_next_pid++;
         p->kstack = ks;
         p->parent = g_cur;

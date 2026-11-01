@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 
 int main(int argc, char** argv) {
-    const char* dir = argc > 1 ? argv[1] : "/";
+    const char* dir = argc > 1 ? argv[1] : ".";
     char name[DIRENT_NAME_MAX];
 
     for (int i = 0;; i++) {
