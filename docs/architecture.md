@@ -506,6 +506,7 @@ Linux i386.
 | 63 | `SYS_dup2` | `ebx` = old fd, `ecx` = new fd | makes `new` refer to the same open file as `old`, closing `new` first; returns `new` or -1 |
 | 89 | `SYS_readdir` | `ebx` = path, `ecx` = index, `edx` = `char name[128]` | copies the index-th entry name of the directory into `name`; returns 1, 0 past the last entry, or -1 on error |
 | 106 | `SYS_stat` | `ebx` = path, `ecx` = `struct bob_stat*` | fills `size` and `is_dir`; 0, or -1 |
+| 200 | `SYS_tcsetraw` | `ebx` = 1 or 0 | 1: raw console, `read(0)` returns whatever bytes are queued (blocking for at least one), no echo, no line editing, Ctrl-C arrives as byte 3 instead of SIGINT. 0: cooked. Switching flushes pending input; `proc_exit` resets it to cooked |
 | other | | | returns -1 |
 
 The header also provides `__syscall3(num, a, b, c)` as an inline helper; the libc wrappers use
@@ -587,6 +588,14 @@ keyboard driver itself, before the line is delivered.
 
 Boot option `noshell` skips `shell_init` and calls `keyboard_enable_shell(false)`, so Enter
 does nothing, lines are never submitted and `init=` is ignored.
+
+### Raw mode, vi and terminal escapes
+
+`/bin/vi <file>` (user/vi.c) is a lite vi: NORMAL (`h j k l`, arrows, `0 $ gg G x dd o O i a A I u`), INSERT and `:` modes (`:w [file]`, `:q`, `:q!`, `:wq`, `:x`), status line with mode, name, `[modified]` and line:col. Undo is single level.
+
+Raw-mode keys: Esc 27, Enter `\n`, Tab 9, Backspace 127, Ctrl-letter = 1..26, arrows `ESC [ A/B/C/D`, Home/End `ESC [ H/F`, Delete `ESC [ 3 ~`.
+
+The VGA terminal understands a small ANSI subset (also for normal programs): `ESC[2J` clear + home, `ESC[r;cH` move (1-based), `ESC[K` clear to end of line, `ESC[7m` inverse, `ESC[0m` normal. The hardware cursor follows the text position. Writing the last cell of row 25 still scrolls, so full-screen programs keep to 79 columns on the bottom row.
 
 ## 11. Known limitations
 

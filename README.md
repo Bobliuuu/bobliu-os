@@ -137,6 +137,7 @@ hand:
 
 | Program | What it does |
 |---|---|
+| `vi` | Lite vi editor (`vi <file>`): NORMAL/INSERT/`:` modes, h j k l and arrows, `0 $ gg G x dd o O i a A I u`, `:w :q :q! :wq :x`. Uses `tcsetraw` (raw console) and the ANSI subset of the VGA terminal |
 | `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Supports `> file` and `>> file` redirection of stdout (as separate words). Built-in: `exit` |
 | `hello` | Prints a greeting, its pid and some libc output |
 | `echo` | Prints its arguments |
