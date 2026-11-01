@@ -62,6 +62,7 @@ int  vfs_unlink(const char* path);
 int  vfs_mkdir(const char* path);
 // graft another filesystem under an absolute path (e.g. /tmp)
 int  vfs_mount(const char* path, vnode_t* root);
+int  vfs_is_mounted(const char* path);
 int  vfs_read(int fd, void* buf, uint32_t len);
 int  vfs_close(int fd);
 int  vfs_dup(int fd);                              // another reference to the same open file

@@ -24,6 +24,11 @@ int vfs_mount(const char* path, vnode_t* root) {
     return 0;
 }
 
+int vfs_is_mounted(const char* path) {
+    for (int i = 0; i < g_nmounts; i++) if (strcmp(g_mounts[i].path, path) == 0) return 1;
+    return 0;
+}
+
 // done with a vnode that isn't held open by anybody
 static void vput(vnode_t* vn) {
     if (vn && vn->refs == 0 && vn->ops && vn->ops->put) vn->ops->put(vn);

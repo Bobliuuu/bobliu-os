@@ -16,6 +16,7 @@
 #include <kernel/initrd_vfs.h>
 #include <kernel/ramfs.h>
 #include <kernel/devfs.h>
+#include <kernel/bobfs.h>
 #include <arch/i386/ata.h>
 #include <arch/i386/paging.h>
 #include <arch/i386/gdt.h>
@@ -119,6 +120,11 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 		if (nsec) printf("ata: hd0 %u sectors (%u KiB)\n", nsec, nsec / 2);
 		else printf("ata: no disk\n");
 		vfs_mount("/dev", devfs_create_root());
+		if (nsec) {
+			vnode_t* droot = bobfs_mount();
+			if (droot) { vfs_mount("/disk", droot); printf("disk: bobfs mounted on /disk\n"); }
+			else printf("disk: no filesystem (run mkfs in the kernel shell)\n");
+		}
 	} else {
 		printf("no initrd module\n");
 	}

@@ -8,6 +8,8 @@
 #include <arch/i386/keyboard.h>
 #include <kernel/proc.h>
 #include <kernel/signal.h>
+#include <kernel/bobfs.h>
+#include <arch/i386/ata.h>
 #include <arch/i386/isr.h>
 #include <arch/i386/portio.h>
 #include <arch/i386/paging.h>
@@ -58,6 +60,7 @@ static int cmd_hexdump(int argc, char** argv);
 static int cmd_exec(int argc, char** argv);
 static int cmd_ps(int argc, char** argv);
 static int cmd_kill(int argc, char** argv);
+static int cmd_mkfs(int argc, char** argv);
 
 static const cmd_t cmds[] = {
     { "help",    cmd_help },
@@ -75,6 +78,7 @@ static const cmd_t cmds[] = {
     { "exec", cmd_exec },
     { "ps",      cmd_ps },
     { "kill",    cmd_kill },
+    { "mkfs",    cmd_mkfs },
     { "panic",   cmd_panic },
 };
 static const int cmd_count = (int)(sizeof(cmds)/sizeof(cmds[0]));
@@ -376,6 +380,18 @@ static int cmd_exec(int argc, char** argv) {
     int status = 0;
     proc_wait(pid, &status);
     if (status) printf("[pid %d exited with %d]\n", pid, (status >> 8) & 0xFF);
+    return 0;
+}
+
+static int cmd_mkfs(int argc, char** argv) {
+    (void)argc; (void)argv;
+    if (!ata_sectors()) { printf("mkfs: no disk\n"); return 1; }
+    if (vfs_is_mounted("/disk")) { printf("mkfs: /disk is already mounted (it would wipe live data); reboot with a fresh disk.img\n"); return 1; }
+    printf("formatting %u KiB...\n", ata_sectors() / 2);
+    if (bobfs_format() < 0) { printf("mkfs: failed\n"); return 1; }
+    vnode_t* root = bobfs_mount();
+    if (!root || vfs_mount("/disk", root) < 0) { printf("mkfs: mount failed\n"); return 1; }
+    printf("bobfs mounted on /disk\n");
     return 0;
 }
 

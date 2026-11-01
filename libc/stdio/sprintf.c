@@ -117,7 +117,7 @@ int snprintf(char* buf, size_t size, const char* fmt, ...) {
 int sprintf(char* buf, const char* fmt, ...) {
     __builtin_va_list ap;
     VA_START(ap, fmt);
-    int r = vsnprintf(buf, (size_t)-1, fmt, ap);
+    int r = vsnprintf(buf, 0x1000000, fmt, ap)   /* no real limit; -1 would wrap the end pointer */;
     VA_END(ap);
     return r;
 }
