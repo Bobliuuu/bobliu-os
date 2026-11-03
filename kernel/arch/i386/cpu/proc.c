@@ -346,7 +346,7 @@ int proc_thread_create(uint32_t fn, uint32_t sp) {
     return t->pid;
 }
 
-int proc_wait(int pid, int* status) {
+int proc_wait(int pid, int* status, int options) {
     proc_t* me = g_cur->group;
     for (;;) {
         int have_child = 0;
@@ -365,6 +365,7 @@ int proc_wait(int pid, int* status) {
             }
         }
         if (!have_child) return -1;
+        if (options & 1) return 0;
 
         uint32_t fl = irq_save();
         if (sig_interrupting()) { irq_restore(fl); return -1; }

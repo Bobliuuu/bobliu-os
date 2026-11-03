@@ -378,7 +378,7 @@ static int cmd_exec(int argc, char** argv) {
         return -1;
     }
     int status = 0;
-    proc_wait(pid, &status);
+    proc_wait(pid, &status, 0);
     if (status) printf("[pid %d exited with %d]\n", pid, (status >> 8) & 0xFF);
     return 0;
 }

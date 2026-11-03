@@ -106,7 +106,7 @@ static void syscall_dispatch(regs_t* r) {
         return;
     case SYS_waitpid: {
         int status = 0;
-        int ret = proc_wait((int)r->ebx, &status);
+        int ret = proc_wait((int)r->ebx, &status, (int)r->edx);
         if (ret > 0 && r->ecx) {
             if (user_range_ok(r->ecx, 4)) *(int*)r->ecx = status;
             else ret = -1;

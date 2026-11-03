@@ -8,6 +8,7 @@ extern "C" {
 int waitpid(int pid, int* status, int options);
 int wait(int* status);
 
+#define WNOHANG 1
 #define WEXITSTATUS(s) (((s) >> 8) & 0xFF)
 #define WIFEXITED(s)   (1)
 

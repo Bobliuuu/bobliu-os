@@ -4,7 +4,7 @@
 #include <arch/i386/paging.h>
 
 #define NPROC       32
-#define PROC_MAX_ARGS 16
+#define PROC_MAX_ARGS 32
 #define PROC_ARG_LEN  128
 #define PROC_MAXFD  16   /* fd table entry: vfs fd >= 0, FD_CONSOLE, or -1 (free) */
 #define FD_CONSOLE  (-2)
@@ -62,7 +62,7 @@ proc_t* proc_by_pid(int pid);   // live (non-zombie) process or 0
 int     proc_spawn(const char* path, char** argv, int argc);   // returns pid or -1
 int     proc_fork(regs_t* tf);                      // child pid to parent, child resumes with 0
 int     proc_exec(const char* path, char** argv, int argc, regs_t* tf);  // replace image; 0 or -1
-int     proc_wait(int pid, int* status);            // pid, -1 if nothing to wait for
+int     proc_wait(int pid, int* status, int options);   // options bit 0 = WNOHANG: 0 if children exist but none finished            // pid, -1 if nothing to wait for
 __attribute__((noreturn)) void proc_exit(int code);
 void    proc_yield(void);
 void    proc_sleep_on(int chan);                    // irqs must be off; returns once woken

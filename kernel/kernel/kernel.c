@@ -150,7 +150,7 @@ void kernel_main(uint32_t multiboot_magic, void* multiboot_info_ptr) {
 		char* args[1] = { path };
 		int pid = proc_spawn(path, args, 1);
 		if (pid > 0) {
-			proc_wait(pid, NULL);
+			proc_wait(pid, NULL, 0);
 			printf("[init exited]\n");
 		} else {
 			printf("init: cannot run %s\n", path);
