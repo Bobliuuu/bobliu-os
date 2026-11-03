@@ -11,6 +11,8 @@ _start:
     addl $4, %esp
     movl (%esp), %eax        /* argc */
     leal 4(%esp), %edx       /* argv */
+    leal 8(%esp,%eax,4), %ecx /* envp = argv + argc + 1 */
+    movl %ecx, environ
     pushl %edx
     pushl %eax
     call main

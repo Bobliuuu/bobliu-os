@@ -4,6 +4,7 @@
 #include <arch/i386/paging.h>
 #include <kernel/syscall.h>
 #include <kernel/proc.h>
+#include <kernel/heap.h>
 #include <kernel/vfs.h>
 #include <kernel/pipe.h>
 #include <kernel/signal.h>
@@ -211,25 +212,43 @@ static void syscall_dispatch(regs_t* r) {
         return;
     }
     case SYS_execve: {
+        // argv/envp strings are copied out of the old image into a kernel buffer first
         char path[PROC_ARG_LEN];
-        char args[PROC_MAX_ARGS][PROC_ARG_LEN];
+        struct exec_buf { char args[PROC_MAX_ARGS][PROC_ARG_LEN]; char env[PROC_MAX_ENV][PROC_ENV_LEN]; };
         char* argv[PROC_MAX_ARGS];
-        int argc = 0;
+        char* envp[PROC_MAX_ENV];
+        int argc = 0, envc = 0;
         if (copy_user_path(path, r->ebx) < 0) { r->eax = (uint32_t)-1; return; }
+        struct exec_buf* eb = (struct exec_buf*)kmalloc(sizeof(*eb));
+        if (!eb) { r->eax = (uint32_t)-1; return; }
 
         if (r->ecx) {
             for (; argc < PROC_MAX_ARGS; argc++) {
-                if (!user_range_ok(r->ecx + 4u * (uint32_t)argc, 4)) { r->eax = (uint32_t)-1; return; }
+                if (!user_range_ok(r->ecx + 4u * (uint32_t)argc, 4)) goto exec_fail;
                 uint32_t up = ((uint32_t*)r->ecx)[argc];
                 if (!up) break;
-                if (copy_user_str(args[argc], up, PROC_ARG_LEN) < 0) { r->eax = (uint32_t)-1; return; }
-                argv[argc] = args[argc];
+                if (copy_user_str(eb->args[argc], up, PROC_ARG_LEN) < 0) goto exec_fail;
+                argv[argc] = eb->args[argc];
             }
         }
-        if (argc == 0) { memcpy(args[0], path, sizeof(path)); argv[0] = args[0]; argc = 1; }
+        if (r->edx) {
+            for (; envc < PROC_MAX_ENV; envc++) {
+                if (!user_range_ok(r->edx + 4u * (uint32_t)envc, 4)) goto exec_fail;
+                uint32_t up = ((uint32_t*)r->edx)[envc];
+                if (!up) break;
+                if (copy_user_str(eb->env[envc], up, PROC_ENV_LEN) < 0) goto exec_fail;
+                envp[envc] = eb->env[envc];
+            }
+        }
+        if (argc == 0) { memcpy(eb->args[0], path, sizeof(path)); argv[0] = eb->args[0]; argc = 1; }
 
         // on success proc_exec rewrites the trap frame (eip/esp) and eax stays 0
-        r->eax = (uint32_t)proc_exec(path, argv, argc, r);
+        r->eax = (uint32_t)proc_exec(path, argv, argc, envp, envc, r);
+        kfree(eb);
+        return;
+exec_fail:
+        kfree(eb);
+        r->eax = (uint32_t)-1;
         return;
     }
     case SYS_brk:

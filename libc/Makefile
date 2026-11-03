@@ -68,6 +68,7 @@ unistd/time.o \
 unistd/pthread.o \
 unistd/timeutil.o \
 stdlib/misc.o \
+stdlib/env.o \
 math/__cos.o \
 math/__math_oflow.o \
 math/__math_uflow.o \

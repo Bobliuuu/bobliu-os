@@ -6,6 +6,8 @@
 #define NPROC       32
 #define PROC_MAX_ARGS 32
 #define PROC_ARG_LEN  128
+#define PROC_MAX_ENV  32
+#define PROC_ENV_LEN  256
 #define PROC_MAXFD  16   /* fd table entry: vfs fd >= 0, FD_CONSOLE, or -1 (free) */
 #define FD_CONSOLE  (-2)
 #define KSTACK_SIZE KSTACK_BYTES   /* see arch/i386/paging.h */
@@ -59,9 +61,9 @@ proc_t* proc_by_pid(int pid);   // live (non-zombie) process or 0
 #define FUTEX_CHAN   0x2000   /* + 64 hash buckets */
 #define WAIT_THREAD  3   /* a thread exited: joiners re-check */
 
-int     proc_spawn(const char* path, char** argv, int argc);   // returns pid or -1
+int     proc_spawn(const char* path, char** argv, int argc);   // no environment   // returns pid or -1
 int     proc_fork(regs_t* tf);                      // child pid to parent, child resumes with 0
-int     proc_exec(const char* path, char** argv, int argc, regs_t* tf);  // replace image; 0 or -1
+int     proc_exec(const char* path, char** argv, int argc, char** envp, int envc, regs_t* tf);  // replace image; 0 or -1
 int     proc_wait(int pid, int* status, int options);   // options bit 0 = WNOHANG: 0 if children exist but none finished            // pid, -1 if nothing to wait for
 __attribute__((noreturn)) void proc_exit(int code);
 void    proc_yield(void);
@@ -77,4 +79,4 @@ int     proc_count(void);
 void    proc_dump(void);                            // for the shell's ps
 
 // user_exec.c: build a fresh address space for path
-int user_load(const char* path, char** argv, int argc, page_directory_t* out_pd, uint32_t* entry, uint32_t* sp);
+int user_load(const char* path, char** argv, int argc, char** envp, int envc, page_directory_t* out_pd, uint32_t* entry, uint32_t* sp);

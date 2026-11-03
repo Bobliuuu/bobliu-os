@@ -59,7 +59,6 @@ int rand(void) {
 }
 void srand(unsigned seed) { g_seed = seed; }
 
-char* getenv(const char* name) { (void)name; return 0; }
 int system(const char* cmd) { (void)cmd; return -1; }
 
 // shell sort: no recursion, no allocation

@@ -174,7 +174,7 @@ static void setup_user_frame(regs_t* tf, uint32_t entry, uint32_t sp) {
 int proc_spawn(const char* path, char** argv, int argc) {
     page_directory_t pd;
     uint32_t entry, sp;
-    if (user_load(path, argv, argc, &pd, &entry, &sp) < 0) return -1;
+    if (user_load(path, argv, argc, 0, 0, &pd, &entry, &sp) < 0) return -1;
 
     proc_t* p = proc_alloc(0);
     if (!p) { paging_free_user(pd, 1); return -1; }
@@ -218,10 +218,10 @@ static int threads_alive(proc_t* leader) {
     return n;
 }
 
-int proc_exec(const char* path, char** argv, int argc, regs_t* tf) {
+int proc_exec(const char* path, char** argv, int argc, char** envp, int envc, regs_t* tf) {
     page_directory_t npd;
     uint32_t entry, sp;
-    if (user_load(path, argv, argc, &npd, &entry, &sp) < 0) return -1;
+    if (user_load(path, argv, argc, envp, envc, &npd, &entry, &sp) < 0) return -1;
 
     proc_t* p = g_cur;
     if (threads_alive(p->group) > 1) return -1;       // exec would pull the address space out from under them

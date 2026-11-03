@@ -495,14 +495,16 @@ static int run_builtin(char** argv, int argc) {
     if (!strcmp(c, "pwd")) { char cwd[128]; if (getcwd(cwd, sizeof(cwd))) printf("%s\n", cwd); return 0; }
     if (!strcmp(c, "exit")) { fflush(NULL); exit(argc > 1 ? atoi(argv[1]) : g_status); }
     if (!strcmp(c, "export") || !strcmp(c, "set")) {
+        int exp = c[0] == 'e';
         if (argc == 1) { for (int i = 0; i < g_nvars; i++) printf("%s=%s\n", g_vars[i].name, g_vars[i].val); return 0; }
         for (int i = 1; i < argc; i++) {
             char* eq = strchr(argv[i], '=');
-            if (eq) { *eq = 0; set_var(argv[i], eq + 1); }
+            if (eq) { *eq = 0; set_var(argv[i], eq + 1); if (exp) setenv(argv[i], eq + 1, 1); }
+            else if (exp) { char v[160]; get_var(argv[i], v); setenv(argv[i], v, 1); }   // export NAME
         }
         return 0;
     }
-    if (!strcmp(c, "unset")) { for (int i = 1; i < argc; i++) unset_var(argv[i]); return 0; }
+    if (!strcmp(c, "unset")) { for (int i = 1; i < argc; i++) { unset_var(argv[i]); unsetenv(argv[i]); } return 0; }
     if (!strcmp(c, "shift")) {
         int n = argc > 1 ? atoi(argv[1]) : 1;
         if (n > g_npos) return 1;
@@ -933,9 +935,24 @@ static char* read_file(const char* path) {
 }
 
 int main(int argc, char** argv) {
-    set_var("PATH", "/bin");
-    set_var("HOME", "/");
-    set_var("USER", "root");
+    // what we were started with becomes shell variables; the usual defaults are exported to children
+    for (char** e = environ; e && *e; e++) {
+        char* eq = strchr(*e, '=');
+        if (!eq) continue;
+        char name[32];
+        int nl = eq - *e;
+        if (nl > 0 && nl < 32) { memcpy(name, *e, nl); name[nl] = 0; set_var(name, eq + 1); }
+    }
+    if (!getenv("PATH")) setenv("PATH", "/bin", 1);
+    if (!getenv("HOME")) setenv("HOME", "/", 1);
+    if (!getenv("USER")) setenv("USER", "root", 1);
+    if (!getenv("TERM")) setenv("TERM", "bobliu", 1);
+    for (char** e = environ; e && *e; e++) {
+        char* eq = strchr(*e, '=');
+        char name[32];
+        int nl = eq ? eq - *e : 0;
+        if (nl > 0 && nl < 32) { memcpy(name, *e, nl); name[nl] = 0; set_var(name, eq + 1); }
+    }
 
     // non-interactive: sh -c 'cmd' [name args..]  /  sh script [args..]
     if (argc >= 2) {

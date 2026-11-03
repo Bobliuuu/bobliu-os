@@ -28,6 +28,7 @@ int dup(int fd);
 int dup2(int oldfd, int newfd);
 int getpid(void);
 int fork(void);
+extern char** environ;
 int execv(const char* path, char* const argv[]);   /* argv is passed to main() */
 int execve(const char* path, char* const argv[], char* const envp[]);
 __attribute__((__noreturn__)) void _exit(int status);

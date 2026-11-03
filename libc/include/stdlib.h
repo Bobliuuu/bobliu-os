@@ -33,7 +33,12 @@ long strtol(const char* s, char** end, int base);
 unsigned long strtoul(const char* s, char** end, int base);
 int rand(void);
 void srand(unsigned seed);
-char* getenv(const char* name);        /* there is no environment: always NULL */
+extern char** environ;                 /* set up by crt0 from the kernel's initial stack */
+char* getenv(const char* name);
+int setenv(const char* name, const char* value, int overwrite);
+int putenv(char* string);
+int unsetenv(const char* name);
+int clearenv(void);
 int system(const char* cmd);           /* no shell to call: -1 */
 void qsort(void* base, size_t n, size_t size, int (*cmp)(const void*, const void*));
 void* bsearch(const void* key, const void* base, size_t n, size_t size, int (*cmp)(const void*, const void*));
