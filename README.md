@@ -113,8 +113,8 @@ Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
 | Doom | #19 | Done | `doom`: doomgeneric port (vendored in `doom/src`), platform layer `doom/bobliu.c`; Freedoom IWAD in the initrd at `/share/freedoom1.wad`; framebuffer out, scancode keys in, no sound. ~60 fps under qemu |
 | Lua 5.1 | #27 (step 1) | Done | `/bin/lua` (vendored in `lua/src`): libm (musl), printf `%f %e %g`, strtod, setjmp, time/strftime, scanf family, locale stubs |
 | Shell language | #25 | Done | quoting, `$VAR`, globbing, `&& \|\| ; &`, redirections incl. `2>&1`, if/for/while, scripts |
-| Coreutils | #26 | In progress | |
-| neovim | #27 | In progress | staged plan in the issue |
+| Coreutils | #26 | Done | clear true false touch mv rmdir head tail sort uniq tee cut tr seq yes basename dirname uname whoami hostname which kill od xxd hexdump find diff more expr test [ printf sed xargs du stat nl rev tac cmp base64 env printenv nproc arch id; rewritten ls cat wc grep cp rm mkdir echo date with the usual flags. Shared helpers in `user/common.h` |
+| neovim | #27 | In progress | done: lua, environment, exec loader without size limit. next: tty/termios, poll, libuv |
 | UI, networking, sound, USB | - | Open | nothing started |
 
 

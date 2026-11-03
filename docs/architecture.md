@@ -669,3 +669,7 @@ The VGA terminal understands a small ANSI subset (also for normal programs): `ES
 `vsnprintf` prints `%f %e %g` exactly: the double is expanded to its exact decimal value with a small base-1e9 bignum and rounded half-to-even, so `%.17g` and denormals come out right. `printf` (hosted libc) is now `vsnprintf` + one `write`. `strtod` scales a 64-bit mantissa with long double (not always correctly rounded in the last bit). `setjmp/longjmp` are in `libc/arch/i386/setjmp.S`. `time.h` gained `mktime/localtime/gmtime/strftime/clock` (utc only), `locale.h` is a "C" stub, and `sscanf/fscanf` share one scanner (`%d %i %u %x %o %f %lf %s %c %n`).
 
 `lua/` holds Lua 5.1.5 unmodified; `lua/build.sh` (called by `iso.sh`) builds `/bin/lua` without readline, dlopen or popen. User stacks are now 32 pages (128 KiB).
+
+## Environment and exec loader (issue #27 steps 2-3)
+
+`execve(path, argv, envp)` now copies up to 32 argv strings (128 bytes) and 32 env strings (256 bytes) into a kmalloc'd buffer and `user_load` lays out `[argc][argv..][NULL][envp..][NULL]` on the new stack; `crt0` stores the envp pointer in `environ`. libc has `getenv/setenv/putenv/unsetenv/clearenv`, `execv` passes `environ`, and `sh` imports its environment, exports `PATH HOME USER TERM` by default and `export NAME[=value]` updates the environment of children. The loader reads the ELF header and program headers, then streams each PT_LOAD segment straight into the freshly mapped frames, so there is no longer a 512 KiB limit (`bigtest` is a 1.1 MB binary). `waitpid` accepts `WNOHANG`.
