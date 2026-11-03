@@ -41,6 +41,8 @@
 #define SYS_tcsetraw 200 /* tcsetraw(on): 1 = raw console (bytes, no echo), 0 = cooked; reset on exit */
 #define SYS_fb_init 201  /* fb_init(struct bob_fbinfo*): switch to 640x480x32 graphics, map the framebuffer; 0 / -1 */
 #define SYS_fb_exit 202  /* fb_exit(): back to text mode */
+#define SYS_tcgetattr 203 /* tcgetattr(fd, struct bob_termios*): 0, or -1 if fd is not the console */
+#define SYS_tcsetattr 204 /* tcsetattr(fd, struct bob_termios*) */
 #define SYS_stat    106
 #define SYS_clock_gettime 265 /* clock_gettime(clk, struct bob_timespec*): clk 0 = wall (utc), 1 = since boot */  /* stat(path, struct bob_stat*) */
 

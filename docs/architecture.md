@@ -673,3 +673,15 @@ The VGA terminal understands a small ANSI subset (also for normal programs): `ES
 ## Environment and exec loader (issue #27 steps 2-3)
 
 `execve(path, argv, envp)` now copies up to 32 argv strings (128 bytes) and 32 env strings (256 bytes) into a kmalloc'd buffer and `user_load` lays out `[argc][argv..][NULL][envp..][NULL]` on the new stack; `crt0` stores the envp pointer in `environ`. libc has `getenv/setenv/putenv/unsetenv/clearenv`, `execv` passes `environ`, and `sh` imports its environment, exports `PATH HOME USER TERM` by default and `export NAME[=value]` updates the environment of children. The loader reads the ELF header and program headers, then streams each PT_LOAD segment straight into the freshly mapped frames, so there is no longer a 512 KiB limit (`bigtest` is a 1.1 MB binary). `waitpid` accepts `WNOHANG`.
+
+## Terminal (termios + ANSI)
+
+`tcgetattr`/`tcsetattr` (syscalls 203/204, console fds only) expose ICANON, ECHO, ISIG, ICRNL and VMIN of the single
+console. `!ICANON` is the old raw mode (bytes, no line editing); `VMIN=0` makes `read` return 0 instead of blocking.
+`isatty` is "tcgetattr works", `ioctl(TIOCGWINSZ)` answers 80x25. `tcsetraw` still works and sets echo/isig off.
+Raw keys: arrows, Home/End, Ins/Del/PgUp/PgDn as `ESC [ ...`, Ctrl-[ \ ] ^ _ @, Enter as `\n` or `\r` per ICRNL.
+
+The VGA text terminal (`tty.c`) understands: `A B C D G d H f` cursor moves, `J K` erase (0/1/2), `L M` insert/delete
+lines, `@ P X` insert/delete/erase chars, `S` scroll, `s u` / `ESC 7 8` save/restore, `m` colours (30-37, 40-47, 90-97,
+100-107, 1 bold, 7 inverse, 0 reset), `?25 h/l` cursor visibility. Writing the last column sets a pending wrap, so the
+bottom-right cell can be drawn without scrolling. `user/ttytest.c` exercises all of it.

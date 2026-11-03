@@ -9,5 +9,6 @@ extern int errno;
 #define EEXIST 17
 #define EISDIR 21
 #define EINVAL 22
+#define ENOTTY 25
 #define ERANGE 34
 #endif

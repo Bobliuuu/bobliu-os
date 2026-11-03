@@ -14,6 +14,8 @@
 
 int console_read(char* dst, int max);
 void console_set_raw(int on);
+void console_get_termios(void* t);
+void console_set_termios(const void* t);
 
 extern int putchar(int);
 
@@ -171,6 +173,14 @@ static void syscall_dispatch(regs_t* r) {
         console_set_raw((int)r->ebx);
         r->eax = 0;
         return;
+    case SYS_tcgetattr:
+    case SYS_tcsetattr: {
+        if (proc_fd_get((int)r->ebx) != FD_CONSOLE || !user_range_ok(r->ecx, 48)) { r->eax = (uint32_t)-1; return; }
+        if (r->eax == SYS_tcgetattr) console_get_termios((void*)r->ecx);
+        else console_set_termios((void*)r->ecx);
+        r->eax = 0;
+        return;
+    }
     case SYS_dup:
         r->eax = (uint32_t)proc_fd_dup((int)r->ebx, -1);
         return;

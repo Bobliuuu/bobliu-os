@@ -109,6 +109,7 @@ static inline char apply_caps_shift(char c, bool shift, bool caps) {
 }
 
 extern int console_is_raw(void);
+extern int console_echo(void), console_isig(void), console_icrnl(void);
 extern void console_push_byte(char c);
 
 static void raw_str(const char* s) { while (*s) console_push_byte(*s++); }
@@ -125,13 +126,16 @@ static void raw_key(uint8_t sc, bool ext) {
         case 0x47: raw_str("\033[H"); break;
         case 0x4F: raw_str("\033[F"); break;
         case 0x53: raw_str("\033[3~"); break;
-        case 0x1C: console_push_byte('\n'); break;   // keypad enter
+        case 0x52: raw_str("\033[2~"); break;
+        case 0x49: raw_str("\033[5~"); break;
+        case 0x51: raw_str("\033[6~"); break;
+        case 0x1C: console_push_byte(console_icrnl() ? '\n' : '\r'); break;   // keypad enter
         }
         return;
     }
     if (sc == 0x01) { console_push_byte(27); return; }
-    if (sc == SC_ENTER) { console_push_byte('\n'); return; }
-    if (sc == SC_BACKSP) { console_push_byte(127); return; }
+    if (sc == SC_ENTER) { console_push_byte(console_icrnl() ? '\n' : '\r'); if (console_echo()) terminal_putchar('\n'); return; }
+    if (sc == SC_BACKSP) { console_push_byte(127); if (console_echo()) { terminal_putchar('\b'); terminal_putchar(' '); terminal_putchar('\b'); } return; }
     if (sc == 0x0F) { console_push_byte('\t'); return; }
     char c = g_shift ? keymap_shift[sc] : keymap[sc];
     if (c == 0) return;
@@ -139,8 +143,16 @@ static void raw_key(uint8_t sc, bool ext) {
     if (g_ctrl) {
         if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 1);
         else if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 1);
+        else if (c == '[') c = 27;
+        else if (c == '\\') c = 28;
+        else if (c == ']') c = 29;
+        else if (c == '6' || c == '^') c = 30;
+        else if (c == '-' || c == '_' || c == '/') c = 31;
+        else if (c == ' ' || c == '2' || c == '@') c = 0;
         else return;
+        if (c == 3 && console_isig()) { terminal_putchar('^'); terminal_putchar('C'); terminal_putchar('\n'); sig_broadcast(SIGINT); return; }
     }
+    if (console_echo() && c >= ' ') terminal_putchar(c);
     console_push_byte(c);
 }
 
@@ -190,7 +202,7 @@ void keyboard_irq(regs_t* r) {
     if (console_is_raw()) { raw_key(sc, false); return; }
 
     // ctrl-c: drop the line being typed and interrupt user programs
-    if (g_ctrl && sc == 0x2E) {
+    if (g_ctrl && sc == 0x2E && console_isig()) {
         terminal_putchar('^'); terminal_putchar('C'); terminal_putchar('\n');
         line_reset();
         sig_broadcast(SIGINT);
@@ -221,7 +233,7 @@ void keyboard_irq(regs_t* r) {
     // Apply caps/shift logic for letters
     c = apply_caps_shift(c, g_shift, g_caps);
 
-    terminal_putchar(c);
+    if (console_echo()) terminal_putchar(c);
     line_push(c);
 }
 
