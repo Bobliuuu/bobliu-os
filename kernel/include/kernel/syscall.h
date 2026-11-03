@@ -43,6 +43,8 @@
 #define SYS_fb_exit 202  /* fb_exit(): back to text mode */
 #define SYS_tcgetattr 203 /* tcgetattr(fd, struct bob_termios*): 0, or -1 if fd is not the console */
 #define SYS_tcsetattr 204 /* tcsetattr(fd, struct bob_termios*) */
+#define SYS_fcntl   55   /* fcntl(fd, cmd, arg): F_GETFL/F_SETFL (O_NONBLOCK only), F_GETFD/F_SETFD (no-op), F_DUPFD */
+#define SYS_poll    168  /* poll(struct bob_pollfd*, nfds, timeout_ms): ready count, 0 on timeout, -1 on EINTR; negative timeout waits forever */
 #define SYS_stat    106
 #define SYS_clock_gettime 265 /* clock_gettime(clk, struct bob_timespec*): clk 0 = wall (utc), 1 = since boot */  /* stat(path, struct bob_stat*) */
 
@@ -61,6 +63,11 @@ struct bob_clone {
 struct bob_timespec {
     int tv_sec;
     int tv_nsec;
+};
+
+struct bob_pollfd {
+    int fd;
+    short events, revents;
 };
 
 struct bob_stat {

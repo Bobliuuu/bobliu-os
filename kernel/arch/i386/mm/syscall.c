@@ -14,6 +14,7 @@
 
 int console_read(char* dst, int max);
 void console_set_raw(int on);
+int console_poll(int events);
 void console_get_termios(void* t);
 void console_set_termios(const void* t);
 
@@ -90,7 +91,12 @@ static int sys_write(uint32_t fd, const char* buf, uint32_t len) {
     int e = proc_fd_get((int)fd);
     if (e == -1) return -1;
     if (!user_range_ok((uint32_t)buf, len)) return -1;
-    if (e >= 0) return vfs_write(e, buf, len);
+    if (e >= 0) {
+        proc_current()->io_nb = (fd < PROC_MAXFD) && (proc_current()->group->nbmask >> fd & 1);
+        int w = vfs_write(e, buf, len);
+        proc_current()->io_nb = 0;
+        return w;
+    }
     for (uint32_t i = 0; i < len; i++) putchar((unsigned char)buf[i]);
     return (int)len;
 }
@@ -120,10 +126,65 @@ static void syscall_dispatch(regs_t* r) {
     case SYS_read: {
         if (!user_range_ok(r->ecx, r->edx)) { r->eax = (uint32_t)-1; return; }
         int e = proc_fd_get((int)r->ebx);
+        proc_current()->io_nb = (r->ebx < PROC_MAXFD) && (proc_current()->group->nbmask >> r->ebx & 1);
         if (e == FD_CONSOLE)
             r->eax = (uint32_t)console_read((char*)r->ecx, (int)r->edx);
         else
             r->eax = (uint32_t)(e < 0 ? -1 : vfs_read(e, (void*)r->ecx, r->edx));
+        proc_current()->io_nb = 0;
+        return;
+    }
+    case SYS_fcntl: {
+        proc_t* g = proc_current()->group;
+        int fd = (int)r->ebx, cmd = (int)r->ecx;
+        if (proc_fd_get(fd) == -1) { r->eax = (uint32_t)-1; return; }
+        switch (cmd) {
+        case 3: r->eax = (g->nbmask >> fd & 1) ? 0x800 : 0; break;                    // F_GETFL
+        case 4:                                                                       // F_SETFL
+            if (r->edx & 0x800) g->nbmask |= 1ull << fd; else g->nbmask &= ~(1ull << fd);
+            r->eax = 0; break;
+        case 1: case 2: r->eax = 0; break;                                            // F_GETFD / F_SETFD
+        case 0: {                                                                     // F_DUPFD (min fd in edx)
+            int e = proc_fd_get(fd), nfd = -1;
+            for (int i = (int)r->edx; i < PROC_MAXFD; i++) if (g->fds[i] == -1) { nfd = i; break; }
+            if (nfd < 0) { r->eax = (uint32_t)-1; break; }
+            if (e >= 0) vfs_dup(e);
+            g->fds[nfd] = e; g->nbmask &= ~(1ull << nfd);
+            r->eax = (uint32_t)nfd; break;
+        }
+        default: r->eax = (uint32_t)-1;
+        }
+        return;
+    }
+    case SYS_poll: {
+        struct bob_pollfd* pf = (struct bob_pollfd*)r->ebx;
+        uint32_t n = r->ecx;
+        int timeout = (int)r->edx;
+        if (n > PROC_MAXFD * 4 || !user_range_ok(r->ebx, n * sizeof(*pf))) { r->eax = (uint32_t)-1; return; }
+        uint32_t target = timer_ticks() + (timeout > 0 ? ((uint32_t)timeout + 9) / 10 : 0);
+        int rc = 0;
+        uint32_t fl = irq_save();
+        for (;;) {
+            int ready = 0;
+            for (uint32_t i = 0; i < n; i++) {
+                int ev = pf[i].events | 8 | 16, got = 0;
+                int e = pf[i].fd < 0 ? -1 : proc_fd_get(pf[i].fd);
+                if (pf[i].fd < 0) got = 0;
+                else if (e == -1) got = 0x20;
+                else if (e == FD_CONSOLE) got = (pf[i].events & 1 ? console_poll(1) : 0) | (pf[i].events & 4 ? 4 : 0);
+                else got = vfs_poll(e, ev);
+                got &= (pf[i].events & 5) | 8 | 16 | 0x20;
+                pf[i].revents = (short)got;
+                if (got) ready++;
+            }
+            if (ready) { rc = ready; break; }
+            if (timeout == 0) break;
+            if (timeout > 0 && (int32_t)(timer_ticks() - target) >= 0) break;
+            if (sig_interrupting()) { rc = -1; break; }
+            proc_sleep_on(WAIT_POLL);
+        }
+        irq_restore(fl);
+        r->eax = (uint32_t)rc;
         return;
     }
     case SYS_open: {

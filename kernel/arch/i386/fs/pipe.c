@@ -46,7 +46,8 @@ static int pipe_read(vnode_t* vn, uint32_t off, void* buf, uint32_t len) {
     uint32_t fl = irq_save();
     while (p->count == 0) {
         if (!p->writers_open) { irq_restore(fl); return 0; }      // EOF
-        if (sig_interrupting()) { irq_restore(fl); return -1; }
+        if (proc_current()->io_nb) { irq_restore(fl); return -11; }   // EAGAIN
+        if (sig_interrupting()) { irq_restore(fl); return -4; }       // EINTR
         proc_sleep_on(chan(p));
     }
     uint32_t n = len < p->count ? len : p->count;
@@ -55,6 +56,7 @@ static int pipe_read(vnode_t* vn, uint32_t off, void* buf, uint32_t len) {
     p->head = (p->head + n) % PIPE_BUF;
     p->count -= n;
     proc_wakeup(chan(p));
+    proc_wakeup(WAIT_POLL);
     irq_restore(fl);
     return (int)n;
 }
@@ -69,7 +71,8 @@ static int pipe_write(vnode_t* vn, uint32_t off, const void* buf, uint32_t len) 
     while (done < len) {
         if (!p->readers_open) { irq_restore(fl); return done ? (int)done : -1; }   // broken pipe
         if (p->count == PIPE_BUF) {
-            if (sig_interrupting()) { irq_restore(fl); return done ? (int)done : -1; }
+            if (proc_current()->io_nb) { irq_restore(fl); return done ? (int)done : -11; }
+            if (sig_interrupting()) { irq_restore(fl); return done ? (int)done : -4; }
             proc_sleep_on(chan(p));
             continue;
         }
@@ -79,6 +82,7 @@ static int pipe_write(vnode_t* vn, uint32_t off, const void* buf, uint32_t len) 
         p->count += n;
         done += n;
         proc_wakeup(chan(p));
+        proc_wakeup(WAIT_POLL);
     }
     irq_restore(fl);
     return (int)done;
@@ -90,10 +94,24 @@ static void pipe_put(vnode_t* vn) {
     uint32_t fl = irq_save();
     if (vn == &p->rd) p->readers_open = 0; else p->writers_open = 0;
     proc_wakeup(chan(p));                  // blocked peers re-check (EOF / EPIPE)
+    proc_wakeup(WAIT_POLL);
     int dead = !p->readers_open && !p->writers_open;
     irq_restore(fl);
     if (dead) kfree(p);
 }
 
-static const vnode_ops_t g_rd_ops = { .read = pipe_read, .put = pipe_put };
-static const vnode_ops_t g_wr_ops = { .write = pipe_write, .put = pipe_put };
+static int pipe_poll(vnode_t* vn, int events) {
+    pipe_t* p = pipe_of(vn);
+    int r = 0;
+    if (vn == &p->rd) {
+        if (p->count > 0) r |= 1;
+        if (!p->writers_open) r |= 16 | (events & 1);    // EOF: readable (read returns 0) and hung up
+    } else {
+        if (p->count < PIPE_BUF) r |= 4;
+        if (!p->readers_open) r |= 8;
+    }
+    return r;
+}
+
+static const vnode_ops_t g_rd_ops = { .read = pipe_read, .put = pipe_put, .poll = pipe_poll };
+static const vnode_ops_t g_wr_ops = { .write = pipe_write, .put = pipe_put, .poll = pipe_poll };

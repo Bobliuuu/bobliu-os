@@ -8,7 +8,7 @@
 #define PROC_ARG_LEN  128
 #define PROC_MAX_ENV  32
 #define PROC_ENV_LEN  256
-#define PROC_MAXFD  16   /* fd table entry: vfs fd >= 0, FD_CONSOLE, or -1 (free) */
+#define PROC_MAXFD  64   /* fd table entry: vfs fd >= 0, FD_CONSOLE, or -1 (free) */
 #define FD_CONSOLE  (-2)
 #define KSTACK_SIZE KSTACK_BYTES   /* see arch/i386/paging.h */
 
@@ -39,6 +39,8 @@ typedef struct proc {
     struct context* ctx;        // saved kernel context while not running
     regs_t*        tf;          // trap frame of the current syscall/irq
     uint32_t       brk;         // end of the user heap (starts at USER_HEAP_BASE)
+    uint64_t       nbmask;      // bit per user fd: O_NONBLOCK (group state, inherited by fork)
+    int            io_nb;       // this thread: the read/write being served must not block
     int            fds[PROC_MAXFD];   // user fd -> vfs fd / FD_CONSOLE / -1; inherited by fork and exec
     uint32_t       sig_pending, sig_mask;
     uint32_t       sig_handler[32];     // 0 default, 1 ignore, else user address
@@ -59,6 +61,7 @@ proc_t* proc_by_pid(int pid);   // live (non-zombie) process or 0
 #define WAIT_CONSOLE 1
 #define WAIT_TIMER   2
 #define FUTEX_CHAN   0x2000   /* + 64 hash buckets */
+#define WAIT_POLL    4   /* any pipe/console/timer event: poll() callers re-check */
 #define WAIT_THREAD  3   /* a thread exited: joiners re-check */
 
 int     proc_spawn(const char* path, char** argv, int argc);   // no environment   // returns pid or -1

@@ -685,3 +685,15 @@ The VGA text terminal (`tty.c`) understands: `A B C D G d H f` cursor moves, `J 
 lines, `@ P X` insert/delete/erase chars, `S` scroll, `s u` / `ESC 7 8` save/restore, `m` colours (30-37, 40-47, 90-97,
 100-107, 1 bold, 7 inverse, 0 reset), `?25 h/l` cursor visibility. Writing the last column sets a pending wrap, so the
 bottom-right cell can be drawn without scrolling. `user/ttytest.c` exercises all of it.
+
+## poll / select / O_NONBLOCK
+
+`fcntl` (syscall 55) keeps a per-fd `O_NONBLOCK` bit in the process group (`nbmask`, copied on fork, cleared on
+close/dup2). `read`/`write` set `proc_current()->io_nb` for the call; pipes and the console then return `-11` instead
+of sleeping. Libc maps the kernel's `-11`/`-4` to `errno = EAGAIN` / `EINTR` (`__io_ret`).
+
+`poll` (syscall 168) asks each open file for readiness through the new `vnode_ops_t.poll` (`vfs_poll`); files without the
+op are always ready. Pipes report `POLLIN` (data, or EOF with `POLLHUP`), `POLLOUT` (space), `POLLERR` (no readers);
+the console reports `POLLIN` when input is queued. A sleeping poll waits on `WAIT_POLL`, which pipe/console events wake
+immediately and the timer tick wakes every 10 ms to check its deadline. `select`, `pipe2`, `gettimeofday` are libc
+wrappers. `PROC_MAXFD` is now 64 and the global open-file table 256. `user/polltest.c` covers all of it.

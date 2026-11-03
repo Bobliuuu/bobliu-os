@@ -67,6 +67,7 @@ void console_push_byte(char c) {
     if (count() >= CON_BUF - 1) return;
     g_buf[g_head] = c; g_head = (g_head + 1) % CON_BUF;
     proc_wakeup(WAIT_CONSOLE);
+    proc_wakeup(WAIT_POLL);
 }
 
 // irq context
@@ -76,6 +77,7 @@ void console_push_line(const char* line) {
     for (const char* p = line; *p; p++) { g_buf[g_head] = *p; g_head = (g_head + 1) % CON_BUF; }
     g_buf[g_head] = '\n'; g_head = (g_head + 1) % CON_BUF;
     proc_wakeup(WAIT_CONSOLE);
+    proc_wakeup(WAIT_POLL);
 }
 
 // blocks until at least one full line is available, returns up to max bytes
@@ -83,7 +85,8 @@ int console_read(char* dst, int max) {
     uint32_t fl = irq_save();
     while (count() == 0) {
         if (g_raw == 2 || (g_raw == 1 && g_vmin == 0)) { irq_restore(fl); return 0; }   // never blocks
-        if (sig_interrupting()) { irq_restore(fl); return -1; }
+        if (proc_current()->io_nb) { irq_restore(fl); return -11; }
+        if (sig_interrupting()) { irq_restore(fl); return -4; }
         proc_sleep_on(WAIT_CONSOLE);
     }
 
@@ -96,4 +99,9 @@ int console_read(char* dst, int max) {
     }
     irq_restore(fl);
     return n;
+}
+
+int console_poll(int events) {
+    (void)events;
+    return count() > 0 ? 1 : 0;
 }

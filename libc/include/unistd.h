@@ -25,6 +25,7 @@ void* sbrk(int incr);
 unsigned sleep(unsigned seconds);   /* returns seconds left if a signal cut it short (all of it, for now) */
 int usleep(unsigned usec);
 int pipe(int fds[2]);
+int pipe2(int fds[2], int flags);
 int dup(int fd);
 int dup2(int oldfd, int newfd);
 int getpid(void);

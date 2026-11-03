@@ -22,6 +22,9 @@ typedef struct {
 
     // done with a vnode that lookup/create handed out (nobody has it open any more)
     void (*put)(vnode_t* vn);
+
+    // readiness: returns the subset of POLLIN(1)/POLLOUT(4)/POLLERR(8)/POLLHUP(16) that holds; absent = always ready
+    int (*poll)(vnode_t* vn, int events);
 } vnode_ops_t;
 
 #define O_RDONLY 0x000

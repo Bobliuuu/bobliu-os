@@ -54,6 +54,7 @@ unistd/write.o \
 unistd/read.o \
 unistd/tcsetraw.o \
 unistd/termios.o \
+unistd/poll.o \
 unistd/fb.o \
 unistd/file.o \
 unistd/getpid.o \

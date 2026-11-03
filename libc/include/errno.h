@@ -2,9 +2,13 @@
 #define _ERRNO_H 1
 extern int errno;
 #define ENOENT 2
+#define EINTR 4
 #define EIO 5
 #define EBADF 9
 #define ENOMEM 12
+#define EAGAIN 11
+#define EWOULDBLOCK EAGAIN
+#define EPIPE 32
 #define EACCES 13
 #define EEXIST 17
 #define EISDIR 21

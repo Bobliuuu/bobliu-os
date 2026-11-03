@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MAX_FD 64
+#define MAX_FD 256
 
 static vnode_t* g_root = 0;
 static file_t g_fds[MAX_FD];
@@ -230,4 +230,12 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
     st->is_dir = vn->is_dir ? 1 : 0;
     vput(vn);
     return 0;
+}
+
+// readiness of an open file for poll(); plain files are always ready
+int vfs_poll(int fd, int events) {
+    if (fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return 0x20;   // POLLNVAL
+    vnode_t* vn = g_fds[fd].vn;
+    if (!vn->ops->poll) return events & 5;
+    return vn->ops->poll(vn, events);
 }

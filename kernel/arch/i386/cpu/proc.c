@@ -77,6 +77,7 @@ static proc_t* proc_alloc(int thread) {
                     p->fds[f] = src->fds[f];
                     if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
                 }
+                p->nbmask = src->nbmask;
                 strcpy(p->cwd, src->cwd);
                 memcpy(p->sig_handler, src->sig_handler, sizeof(p->sig_handler));
                 p->sig_restorer = src->sig_restorer;
@@ -423,6 +424,7 @@ int proc_fd_close(int ufd) {
     if (ufd < 0 || ufd >= PROC_MAXFD || g->fds[ufd] == -1) return -1;
     if (g->fds[ufd] >= 0) vfs_close(g->fds[ufd]);
     g->fds[ufd] = -1;
+    g->nbmask &= ~(1ull << ufd);
     return 0;
 }
 
@@ -440,6 +442,7 @@ int proc_fd_dup(int ofd, int nfd) {
     }
     if (e >= 0) vfs_dup(e);
     g_cur->group->fds[nfd] = e;
+    g_cur->group->nbmask &= ~(1ull << nfd);
     return nfd;
 }
 
