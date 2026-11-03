@@ -26,7 +26,9 @@ int abs(int x);
 long labs(long x);
 int atoi(const char* s);
 long atol(const char* s);
-double atof(const char* s);            /* plain decimal only */
+double atof(const char* s);
+double strtod(const char* s, char** end);   /* decimal, inf, nan, hex ints */
+float strtof(const char* s, char** end);
 long strtol(const char* s, char** end, int base);
 unsigned long strtoul(const char* s, char** end, int base);
 int rand(void);

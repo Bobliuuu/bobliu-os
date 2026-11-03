@@ -276,6 +276,31 @@ static bool print_float(struct fmt* f, double x) {
 }
 #endif
 
+#if !defined(__is_libk)
+// hosted: format with the shared vsnprintf (floats included) and write once
+#include <stdlib.h>
+#include <unistd.h>
+int vprintf(const char* fmt, va_list ap) {
+    char small[256];
+    va_list ap2;
+    va_copy(ap2, ap);
+    int n = vsnprintf(small, sizeof(small), fmt, ap);
+    if (n < (int)sizeof(small)) { if (n > 0) write(1, small, n); }
+    else {
+        char* big = malloc(n + 1);
+        if (big) { vsnprintf(big, n + 1, fmt, ap2); write(1, big, n); free(big); }
+    }
+    va_end(ap2);
+    return n;
+}
+int printf(const char* restrict format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    int r = vprintf(format, ap);
+    va_end(ap);
+    return r;
+}
+#else
 int printf(const char* restrict format, ...) {
     va_list ap;
     va_start(ap, format);
@@ -377,3 +402,5 @@ int printf(const char* restrict format, ...) {
     va_end(ap);
     return written;
 }
+
+#endif

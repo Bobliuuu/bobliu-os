@@ -22,7 +22,7 @@
 #define USER_LO         0x10000000u
 #define USER_HI         0x40000000u
 #define USER_STACK_TOP  USER_HI
-#define USER_STACK_PAGES 8u
+#define USER_STACK_PAGES 32u
 #define USER_HEAP_BASE  0x20000000u   /* brk() area: [HEAP_BASE, HEAP_MAX) */
 #define USER_HEAP_MAX   0x30000000u
 #define USER_FB_BASE    0x30000000u   /* framebuffer mapping (fb_init) */

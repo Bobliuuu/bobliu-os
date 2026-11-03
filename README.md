@@ -111,6 +111,10 @@ Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
 | Framebuffer + raw key events | #23 | Done | `fb_init()` gives a 640x480x32 linear framebuffer (qemu `-vga std`); `tcsetraw(2)` gives non-blocking raw scancodes with key up/down; demo `fbtest` |
 | libc stdio + extras | #24 | Done | `FILE` (fopen/fread/fwrite/fseek/fgets/fprintf...), vsnprintf with flags/width/precision/`ll`, sscanf, ctype, strtol/qsort/atexit/rand, strdup etc.; test `stdiotest` |
 | Doom | #19 | Done | `doom`: doomgeneric port (vendored in `doom/src`), platform layer `doom/bobliu.c`; Freedoom IWAD in the initrd at `/share/freedoom1.wad`; framebuffer out, scancode keys in, no sound. ~60 fps under qemu |
+| Lua 5.1 | #27 (step 1) | Done | `/bin/lua` (vendored in `lua/src`): libm (musl), printf `%f %e %g`, strtod, setjmp, time/strftime, scanf family, locale stubs |
+| Shell language | #25 | Done | quoting, `$VAR`, globbing, `&& \|\| ; &`, redirections incl. `2>&1`, if/for/while, scripts |
+| Coreutils | #26 | In progress | |
+| neovim | #27 | In progress | staged plan in the issue |
 | UI, networking, sound, USB | - | Open | nothing started |
 
 

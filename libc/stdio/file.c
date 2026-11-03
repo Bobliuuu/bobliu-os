@@ -242,7 +242,6 @@ int fprintf(FILE* f, const char* fmt, ...) {
     return r;
 }
 
-int fscanf(FILE* f, const char* fmt, ...) { (void)f; (void)fmt; return EOF; }
 
 void setbuf(FILE* f, char* buf) { (void)f; (void)buf; }
 int setvbuf(FILE* f, char* buf, int mode, size_t size) {
@@ -268,3 +267,21 @@ int rename(const char* from, const char* to) {
 }
 
 void perror(const char* s) { fprintf(stderr, "%s: error %d\n", s ? s : "", errno); }
+
+// reopen f on another file (same FILE object); the old file is closed
+FILE* freopen(const char* path, const char* mode, FILE* f) {
+    if (!path) return 0;
+    fflush(f);
+    FILE* n = fopen(path, mode);
+    if (!n) { fclose(f); return 0; }
+    if (f->fd > 2 || !(f->flags & F_STATIC)) close(f->fd);
+    else { dup2(n->fd, f->fd); close(n->fd); n->fd = f->fd; }
+    f->fd = n->fd;
+    f->flags = (n->flags | (f->flags & F_STATIC)) & ~F_UNBUF;
+    f->rpos = f->rend = f->wlen = 0;
+    f->unget = -1;
+    for (FILE** pp = &g_open; *pp; pp = &(*pp)->next) if (*pp == n) { *pp = n->next; break; }
+    free(n->buf);
+    free(n);
+    return f;
+}

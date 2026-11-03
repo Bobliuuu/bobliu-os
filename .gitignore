@@ -26,3 +26,4 @@ initrd/bin/
 disk.img
 doom/build/
 initrd/share/
+lua/build/

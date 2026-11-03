@@ -14,7 +14,7 @@ INCLUDEDIR?=$(PREFIX)/include
 LIBDIR?=$(EXEC_PREFIX)/lib
 
 CFLAGS:=$(CFLAGS) -ffreestanding -Wall -Wextra
-CPPFLAGS:=$(CPPFLAGS) -D__is_libc -Iinclude
+CPPFLAGS:=$(CPPFLAGS) -D__is_libc -Iinclude -Imath
 LIBK_CFLAGS:=$(CFLAGS)
 LIBK_CPPFLAGS:=$(CPPFLAGS) -D__is_libk
 
@@ -66,6 +66,55 @@ unistd/brk.o \
 unistd/signal.o \
 unistd/time.o \
 unistd/pthread.o \
+unistd/timeutil.o \
+stdlib/misc.o \
+math/__cos.o \
+math/__math_oflow.o \
+math/__math_uflow.o \
+math/__math_invalid.o \
+math/__math_divzero.o \
+math/__math_xflow.o \
+math/__expo2.o \
+math/__rem_pio2_large.o \
+math/__rem_pio2.o \
+math/__sin.o \
+math/__tan.o \
+math/acos.o \
+math/asin.o \
+math/atan.o \
+math/atan2.o \
+math/cbrt.o \
+math/copysign.o \
+math/cos.o \
+math/cosh.o \
+math/exp_data.o \
+math/exp.o \
+math/exp2.o \
+math/expm1.o \
+math/fabs.o \
+math/fmax.o \
+math/fmin.o \
+math/fmod.o \
+math/frexp.o \
+math/hypot.o \
+math/ldexp.o \
+math/log_data.o \
+math/log.o \
+math/log10.o \
+math/log1p.o \
+math/log2_data.o \
+math/log2.o \
+math/modf.o \
+math/pow_data.o \
+math/pow.o \
+math/scalbn.o \
+math/sin.o \
+math/sinh.o \
+math/sqrt.o \
+math/round_x87.o \
+math/tan.o \
+math/tanh.o \
+stdlib/strtod.o \
 stdio/file.o \
 stdio/sscanf.o \
 stdlib/util.o \

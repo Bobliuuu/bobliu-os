@@ -50,18 +50,7 @@ long strtol(const char* s, char** end, int base) { return (long)strtoul(s, end, 
 int atoi(const char* s) { return (int)strtol(s, 0, 10); }
 long atol(const char* s) { return strtol(s, 0, 10); }
 
-double atof(const char* s) {
-    while (isspace((unsigned char)*s)) s++;
-    int neg = 0;
-    if (*s == '-') { neg = 1; s++; } else if (*s == '+') s++;
-    double v = 0;
-    while (isdigit((unsigned char)*s)) v = v * 10 + (*s++ - '0');
-    if (*s == '.') {
-        double scale = 0.1;
-        for (s++; isdigit((unsigned char)*s); s++, scale /= 10) v += (*s - '0') * scale;
-    }
-    return neg ? -v : v;
-}
+double atof(const char* s) { return strtod(s, 0); }
 
 static unsigned g_seed = 1;
 int rand(void) {

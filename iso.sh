@@ -12,6 +12,7 @@ done
 
 # doom (doomgeneric port); the iwad is picked up from doom/wad/
 ./doom/build.sh
+./lua/build.sh
 
 mkdir -p isodir
 mkdir -p isodir/boot
