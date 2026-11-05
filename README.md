@@ -309,6 +309,10 @@ Honest list; details in [docs/architecture.md](docs/architecture.md#11-known-lim
 - Kernel-mode exceptions halt the machine; OOM during a COW fault kills the process
 - VGA/framebuffer only, no sound, no networking, no serial console
 
+## 📄 License
+
+bobliu's own code is [MIT](LICENSE). Vendored code keeps its own license: doomgeneric (`doom/LICENSE`), Freedoom (`doom/wad/COPYING.txt`), Lua (`lua/LICENSE`).
+
 ## 🙏 Credits
 
 - 📖 [OSDev wiki](https://wiki.osdev.org/) and its Meaty Skeleton
