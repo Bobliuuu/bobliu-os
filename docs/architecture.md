@@ -632,14 +632,13 @@ The VGA terminal understands a small ANSI subset (also for normal programs): `ES
 - **Interrupt setup is redundant and early.** `gdt_init` and `idt_init` run twice (once in `interrupts_init`, again in `kernel_main` around the TSS), and interrupts are enabled before PMM and paging exist.
 - **Input and output.** US-layout scancode set 1 only; extended (`E0`) keys are ignored. Output is VGA text mode only; no serial console.
 - **Stack protector.** Disabled for the kernel build; `ssp.c` and the guard exist but `ssp_init` is not called in `kernel_main`.
-- **Dead and unused code.** `kernel/arch/i386/elf/elf.c` (`elf_load_from_vfs`, an older loader that still uses the old stack top) is still compiled and linked but nothing calls it; the real loader is `cpu/user_exec.c`. `kernel_old.c`, `boot_old.s`, `linker_old.ld`, `kernel_old.c++`, `kernel/arch/i386/test/*` and the unused `user_code` function in `kernel.c` are not part of any live path.
+- **Dead and unused code.** `kernel/arch/i386/elf/elf.c` (`elf_load_from_vfs`, an older loader that still uses the old stack top) is still compiled and linked but nothing calls it; the real loader is `cpu/user_exec.c`. `kernel/arch/i386/test/*` and the unused `user_code` function in `kernel.c` are not part of any live path.
 
 ### Inconsistencies noticed while documenting
 
 - The kernel shell's `help` text omits `uptime`, even though it is registered.
-- `grub.cfg` at the repo root (`myos.bin`) is stale; `iso.sh` generates the real one into `isodir/`.
 - `elf/elf.c` still redefines `USER_STACK_TOP` (as `0x02000000`) and `USER_STACK_PAGES` (4), conflicting with the `paging.h` values (`0x40000000`, 8) that the live loader uses.
-- `test.sh` and the stray top-level `hello`, `initrd_root/` and `initrd.tar` files are leftovers and not used by `iso.sh`.
+- (Resolved) the stale `test.sh`, `grub.cfg`, `*_old.*`, top-level `hello`, `initrd_root/`, `initrd.tar` and `qemu.log` leftovers were removed from the repo.
 - `PF_TMP_PT_VA` (`0x00FF0000`) in `interrupts/page_fault.c` is only used by the kernel-fault page-table dump.
 
 

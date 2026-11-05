@@ -1,293 +1,322 @@
-# bobliu
+<div align="center">
 
-A small, from-scratch 32-bit x86 (i686) operating system. It boots from GRUB, sets up its own
-descriptor tables, interrupts, paging and memory allocators, mounts a tar-based initrd behind a
-tiny VFS, and runs ELF binaries as preemptively scheduled ring 3 processes with private address
-spaces. Processes talk to the kernel through a small syscall ABI on `int 0x80` (`fork`,
-`execve`, `waitpid`, `exit`, `read`, `write`, `getpid`, `brk`, plus file calls `open`, `close`,
-`lseek`, `stat`, `readdir`, `unlink`, `mkdir`, `dup`, `dup2`), and the default boot drops you into a
-small user-space shell that is itself an ELF program. A kernel shell is still there for poking
-at the machine.
+# 🧠 bobliu OS
+
+### A from-scratch 32-bit x86 operating system that boots, forks, pipes, runs **Lua**, and plays **DOOM**.
+
+![arch](https://img.shields.io/badge/arch-i686-blue?style=for-the-badge)
+![boot](https://img.shields.io/badge/boot-GRUB%20Multiboot-orange?style=for-the-badge)
+![lang](https://img.shields.io/badge/C%20%2B%20ASM-no%20Linux%2C%20no%20glibc-informational?style=for-the-badge)
+![doom](https://img.shields.io/badge/DOOM-~60%20fps-red?style=for-the-badge)
+![status](https://img.shields.io/badge/status-hobby%20kernel-success?style=for-the-badge)
+
+<img src="docs/img/doom.png" width="640" alt="Doom (Freedoom) running on bobliu in QEMU">
+
+*Freedoom running as a ring 3 process on bobliu: framebuffer out, raw scancodes in. Screenshot taken from this repo's own ISO under QEMU.*
+
+[🚀 Quickstart](#-quickstart) · [✨ Features](#-features) · [🏗️ Architecture](#%EF%B8%8F-architecture) · [🎬 Demo script](#-demo-script) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 Deep dive](docs/architecture.md)
+
+</div>
+
+---
+
+## 👀 What is this?
+
+bobliu is a hobby kernel written to learn how every layer fits together, following the
+[OSDev "Creating an Operating System"](https://wiki.osdev.org/Creating_an_Operating_System)
+roadmap, and then pushed well past it. No Linux, no borrowed kernel: its own bootstrap,
+interrupts, paging, allocators, scheduler, VFS, filesystems, libc, shell and coreutils.
+
+It boots from GRUB into a **userland shell** (itself an ELF program) with tab completion,
+history, pipes, redirection, scripting, `vi`, a Lua 5.1 interpreter and a Doom port.
+
+<p align="center"><img src="docs/img/shell.png" width="640" alt="bobliu shell running Lua"></p>
 
 ```
 Bobliu's kernel
 bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
-$ echo hi there
-hi there
-$ ls /bin
-cat  (35340 bytes)
-echo  (31500 bytes)
-crash  (33100 bytes)
-sh  (41196 bytes)
-forktest  (37848 bytes)
-hello  (32904 bytes)
-ls  (35964 bytes)
-$ cat /hello.txt
-Hello, world!$ 
+/ $ echo hi | tr a-z A-Z
+HI
+/ $ ls /bin | wc -l
+78
+/ $ lua -e "for i=1,3 do print(i, i*i, math.sqrt(i)) end"
+1       1       1
+2       4       1.4142135623731
+3       9       1.7320508075689
+/ $ doom -warp 1 1 -skill 2
 ```
 
-It is a hobby kernel: single core, VGA text mode, PS/2 keyboard, at most 16 processes. It is
-built to learn how the pieces fit together, and it follows the
-[OSDev wiki "Creating an Operating System"](https://wiki.osdev.org/Creating_an_Operating_System)
-roadmap. The honest status of each phase is below.
+> 🛑 **Scope:** single core, VGA text + linear framebuffer, PS/2 keyboard, at most 16 processes.
+> It is a learning OS, not a Linux replacement. See [known limitations](#-known-limitations).
 
-## What works
+## 🚀 Quickstart
 
-- **Multiboot 1 boot** via GRUB, with memory map, command line (`init=`, `noshell`) and module (initrd) parsing
-- **GDT** with ring 0 and ring 3 code/data segments, plus a **TSS** whose `esp0` is switched per process
-- **IDT, ISRs and IRQs**: CPU exceptions 0-31, remapped 8259 PIC (vectors 32-47), 100 Hz PIT timer, `int 0x80` as a user-callable gate
-- **Physical memory manager**: bitmap frame allocator seeded from the multiboot memory map
-- **Paging**: the first 256 MiB is identity-mapped and shared by every address space (PDEs 0..63); user space lives at `0x10000000..0x40000000` in per-process page tables; `CR0.WP` is set so read-only pages also bind the kernel
-- **Kernel heap**: first-fit free-list allocator with split and coalesce; `kfree` works and the heap's frames are reserved in the PMM
-- **Kernel stacks with guard pages**: each process's 16 KiB kernel stack lives in a dedicated region at `0xE0000000`, preceded by an unmapped guard page; overflow prints `KERNEL STACK OVERFLOW` and halts instead of corrupting the heap
-- **Processes**: a 16-entry process table, a guarded kernel stack and page directory per process, `swtch()` context switching, a round-robin scheduler, and timer preemption of ring 3 code every 5 ticks (50 ms)
-- **fork / exec / waitpid / exit**: `fork` is copy-on-write (frames are shared and write-protected, with a per-frame refcount in the PMM, and copied on the first write), `execve` replaces the image and puts `argc`/`argv` on the new stack, exited processes become zombies until reaped, and a fault in ring 3 kills only that process
-- **PS/2 keyboard** driver (US layout, shift and caps lock) feeding a line editor; finished lines go to the kernel shell, or to the console (stdin) buffer while a user program is in the foreground
-- **initrd**: a ustar archive loaded as a GRUB module, exposed through a small **VFS** (open/read/write/seek/close/stat/readdir/unlink/mkdir) with a mount table
-- **`/tmp`**: a writable in-memory filesystem (ramfs); the initrd itself stays read-only
-- **ATA disk driver**: polled PIO on the primary bus, exposed as `/dev/hd0` (whole disk as a byte-addressable file; QEMU gets `disk.img`)
-- **ELF32 loader** (`cpu/user_exec.c`) that validates the image, maps `PT_LOAD` segments plus an 8-page stack into a fresh address space, and copies through the identity map
-- **File descriptors**: each process has a 16-entry fd table (`PROC_MAXFD`); fds 0-2 are the console, fds 3+ map to VFS files, and they are closed on exit. `fork` and `exec` inherit them (parent and child share the file offset), and `dup`/`dup2` work, including on the console fds, which is what the shell's `>` and `>>` use
-- **Syscalls**: `exit`, `fork`, `read`, `write`, `open`, `close`, `waitpid`, `execve`, `unlink`, `getpid`, `lseek`, `mkdir`, `dup`, `brk`, `dup2`, `readdir`, `stat`, numbered like Linux i386
-- **A small libc and toolchain slice**: `libc.a` (stdio `printf`/`puts`, string incl. `strcat`, `stdlib` `malloc`/`calloc`/`realloc`/`free` on top of `sbrk`, `fcntl.h`, `unistd` incl. `open`/`close`/`lseek`/`dup`/`unlink`, `sys/stat.h` `stat`, `dirent.h` `readdir_at`, `sys/wait.h`, `exit`/`abort`), `crt0.S`, a linker script and an `i686-bobliu-gcc` wrapper
-- **User programs** in `user/` (`sh`, `hello`, `echo`, `cat`, `ls`, `cp`, `rm`, `mkdir`, `hd`, and the tests `forktest`, `fdtest`, `memtest`, `wtest`, `pipetest`, `sigtest`, `timetest`, `threadtest`, `crash`), plus `wc`, `grep`, `date`, `sleep`, `vi` built into `initrd/bin`
-- **Kernel shell** with filesystem navigation, memory inspection, `ps` and `exec`
-
-## Status and roadmap
-
-Mapped to the OSDev wiki phases. Status is based on what is in the tree, not on intent.
-
-### Phase I: kernel foundations
-
-| Item | Status | Notes |
-|---|---|---|
-| Bare bones | Done | `boot.S`, linker script, VGA terminal, global constructors |
-| Multiboot | Done | Multiboot 1; mmap, cmdline (`noshell`), modules |
-| GDT | Done | Null, kernel code/data, user code/data, TSS (selector `0x28`) |
-| Memory management | Done, basic | Bitmap PMM, identity paging for the kernel, free-list heap with a working `kfree` |
-| Interrupts | Done | Exceptions, remapped PIC, PIT, `int 0x80`; EOI sent first |
-| Keyboard | Done | Scancode set 1, US layout, shift/caps, line buffer; no extended keys; lines routed to the shell or to stdin |
-| Filesystem | Done | tar initrd (read-only) and a ramfs on `/tmp` behind a VFS with a mount table, reachable from user space through file syscalls; `/dev/hd0` for the ATA disk; no on-disk filesystem yet |
-
-### Phase II: user space
-
-| Item | Issue | Status | Notes |
-|---|---|---|---|
-| User space (ring 3) | #1 | Done | GDT/TSS, `iret` into ring 3, per-process page tables at `0x10000000..0x40000000` |
-| Program loading | #2 | Done | ELF32 loader in `cpu/user_exec.c`: validates headers, copies via the identity map |
-| Syscall ABI | #3 | Done | `int 0x80`, Linux-style numbers; `exit`, `fork`, `read`, `write`, `waitpid`, `execve`, `getpid` (file syscalls added in #8) |
-| OS-specific toolchain | #4 | Done, minimal | `crt0.S` (passes `argc`/`argv`), `user.ld`, gcc wrapper; reuses `i686-elf-gcc`, no `i686-bobliu` target |
-| libc | #5 | Done | `libc.a`: stdio (`printf`, `puts`), string (incl. `strchr`, `strcat`), `unistd`, `sys/stat.h`, `dirent.h`, `sys/wait.h`, `exit`/`abort`; `malloc` since #11 |
-| fork / exec | #6 | Done | Process table, round-robin scheduler, `swtch`, `fork` (copy-on-write since #9), `execve`, `waitpid`, zombies |
-| Userland shell | #7 | Done | `user/sh.c`: reads a line, `fork` + `execv` from `/bin`, `waitpid` |
-
-| File syscalls | #8 | Done (writes came in #12) | Per-process fd table (16 entries); `open`, `close`, `lseek`, `stat`, `readdir`, and `read` on fds 3+; `user/cat.c` and `user/ls.c` |
-| Memory hardening | #9 | Done | Kernel-stack guard pages (region at `0xE0000000`) and copy-on-write `fork` (`P_COW` bit, per-frame refcounts, `CR0.WP`) |
-
-| fd inheritance, `dup` | #10 | Done | fds are shared across `fork`/`exec` (refcounted open files), `dup`, `dup2` |
-| `brk` and `malloc` | #11 | Done | heap at `0x20000000`, copy-on-write across `fork`; first-fit `malloc` with coalescing in libc |
-| Writable files | #12 | Done | ramfs mounted on `/tmp`; `open` flags (`O_CREAT`, `O_TRUNC`, `O_APPEND`), `write`, `unlink`, `mkdir`; shell `>` and `>>`; `cp`, `rm`, `mkdir` |
-| Disk driver | #13 | Done | ATA PIO (LBA28) on the primary master, `/dev/hd0`; `hd` dumps it, `echo x > /dev/hd0` writes it |
-
-Phase II is complete (#1-#13). Follow-ups that closed the gaps it left:
-
-| Item | Issue | Notes |
-|---|---|---|
-| Working directory | #14 | `chdir`/`getcwd`, relative paths resolved in the kernel against a per-process cwd (inherited by `fork`/`exec`); `cd`, `pwd` in `sh` |
-| Pipes | #15 | `pipe` syscall (4 KiB ring buffer, blocking, EOF and broken-pipe handling); `a \| b \| c` in `sh`; `wc`, `grep` |
-| Signals | #16 | `kill`, `signal`, `sigreturn`; handlers run on the user stack, a signal interrupts blocking `read`/`waitpid`/pipe calls; Ctrl-C sends `SIGINT` to every user process that isn't ignoring it (the shell ignores it); no process groups |
-| On-disk filesystem | #17 | `bobfs` (1 KiB blocks, 128 inodes, 12 direct + 1 indirect block, write-through), mounted on `/disk`; run `mkfs` in the kernel shell once to format `disk.img` |
-| Tab completion | #22 | `sh` has a raw-mode line editor with history and Tab completion of commands and paths |
-| Lite vi | #18 | `/bin/vi`: raw console mode (`tcsetraw`), a small ANSI subset in the VGA terminal, normal/insert/`:` modes |
-
-### Phase III: extending the OS
-
-| Item | Issue | Status | Notes |
-|---|---|---|---|
-| Time | #20 | Done | CMOS RTC read at boot, wall clock = boot epoch + PIT ticks (100 Hz); `time`, `clock_gettime`, `nanosleep`; `sleep`, `usleep`, `gmtime_r`; `date`, `sleep` programs |
-| Threads | #21 | Done | `clone`-style kernel threads in the leader's group (shared address space, fds, cwd, heap, signal handlers); `pthread_create/join/exit`, mutex, condition variable on a futex; no TLS, no SMP |
-| Secondary storage | #13 | Done | ATA PIO driver |
-| Real filesystems | #17 | Done (one) | `bobfs`; no FAT/ext2 |
-| Framebuffer + raw key events | #23 | Done | `fb_init()` gives a 640x480x32 linear framebuffer (qemu `-vga std`); `tcsetraw(2)` gives non-blocking raw scancodes with key up/down; demo `fbtest` |
-| libc stdio + extras | #24 | Done | `FILE` (fopen/fread/fwrite/fseek/fgets/fprintf...), vsnprintf with flags/width/precision/`ll`, sscanf, ctype, strtol/qsort/atexit/rand, strdup etc.; test `stdiotest` |
-| Doom | #19 | Done | `doom`: doomgeneric port (vendored in `doom/src`), platform layer `doom/bobliu.c`; Freedoom IWAD in the initrd at `/share/freedoom1.wad`; framebuffer out, scancode keys in, no sound. ~60 fps under qemu |
-| Lua 5.1 | #27 (step 1) | Done | `/bin/lua` (vendored in `lua/src`): libm (musl), printf `%f %e %g`, strtod, setjmp, time/strftime, scanf family, locale stubs |
-| Shell language | #25 | Done | quoting, `$VAR`, globbing, `&& \|\| ; &`, redirections incl. `2>&1`, if/for/while, scripts |
-| Coreutils | #26 | Done | clear true false touch mv rmdir head tail sort uniq tee cut tr seq yes basename dirname uname whoami hostname which kill od xxd hexdump find diff more expr test [ printf sed xargs du stat nl rev tac cmp base64 env printenv nproc arch id; rewritten ls cat wc grep cp rm mkdir echo date with the usual flags. Shared helpers in `user/common.h` |
-| neovim | #27 | In progress | done: lua, environment, exec loader without size limit. next: tty/termios, poll, libuv |
-| UI, networking, sound, USB | - | Open | nothing started |
-
-
-## Build and run
-
-You need:
-
-- an `i686-elf` cross toolchain (binutils and GCC) in `~/opt/cross/bin`
-- `i686-elf-grub-mkrescue` (GRUB built for `i686-elf`)
-- `xorriso`
-- `qemu-system-i386`
-- GNU `make` (the scripts call `gmake` by default; override with `MAKE=make`)
+**Prereqs:** `i686-elf` cross GCC and binutils in `~/opt/cross/bin`, `i686-elf-grub-mkrescue`,
+`xorriso`, `qemu-system-i386`, GNU `make`.
 
 ```sh
+git clone https://github.com/Bobliuuu/bobliu-os && cd bobliu-os
 export PATH="$HOME/opt/cross/bin:$PATH"
+export MAKE=make            # scripts default to gmake (macOS/Homebrew)
 
-./iso.sh      # builds libc/kernel, user programs, initrd, and bobliu.iso
-./qemu.sh     # runs iso.sh, then boots bobliu.iso in QEMU
-./clean.sh    # remove build products
+./iso.sh                    # build libc, kernel, userland, initrd -> bobliu.iso
+dd if=/dev/zero of=disk.img bs=1M count=4      # optional ATA disk for bobfs
+./qemu.sh                   # build + boot in QEMU
 ```
 
-`iso.sh` does the following: installs headers into `sysroot/`, builds `libc.a`, `libk.a` and the
-kernel, assembles `toolchain/crt0.S`, compiles every `user/*.c` with `toolchain/i686-bobliu-gcc`
-into `initrd/bin/` (gitignored), tars `initrd/` into `isodir/boot/initrd.tar`, writes a
-`grub.cfg`, and calls `i686-elf-grub-mkrescue`. The GRUB menu has three entries:
+The Freedoom IWAD is committed, so a fresh clone builds and runs Doom with nothing extra.
 
-| Entry | Kernel command line | Behavior |
+| 🧰 Script | What it does |
+|---|---|
+| `./iso.sh` | headers → `libc.a`/`libk.a` → kernel → every `user/*.c` → initrd tar → `bobliu.iso` |
+| `./qemu.sh` | runs `iso.sh`, boots QEMU (`-d int,cpu_reset -D qemu.log` so triple faults leave a trace) |
+| `./clean.sh` | remove build products |
+
+**GRUB menu:**
+
+| Entry | Cmdline | Behavior |
 |---|---|---|
-| `bobliu (user shell)` (default) | `init=/bin/sh` | spawns `/bin/sh` as the first process; when it exits you fall back to the kernel shell |
-| `bobliu (kernel shell)` | (none) | kernel shell only |
-| `bobliu (noshell)` | `noshell` | no shell and keyboard input is ignored |
+| `bobliu (user shell)` ⭐ | `init=/bin/sh` | `/bin/sh` is pid 1; on exit you drop to the kernel shell |
+| `bobliu (kernel shell)` | none | kernel shell only |
+| `bobliu (noshell)` | `noshell` | no shell, keyboard ignored |
 
-`qemu.sh` runs with `-no-reboot -no-shutdown -d int,cpu_reset -D qemu.log`, so a triple fault
-stops the VM and the interrupt trace lands in `qemu.log`.
+Add a program: drop `user/myprog.c`, rerun `./iso.sh`, run `myprog`.
 
-Anything you put in `initrd/` ends up in the root of the filesystem. To add a user program,
-drop a `.c` file in `user/` and re-run `./iso.sh`; it shows up as `/bin/<name>`. To build one by
-hand:
+## ✨ Features
+
+### 🧬 Kernel
+- 🥾 **Multiboot 1** boot via GRUB: memory map, cmdline (`init=`, `noshell`), initrd module
+- 🧱 **GDT + TSS** with ring 0/3 segments; `esp0` switched per process
+- ⚡ **IDT / ISRs / IRQs**: exceptions 0-31, remapped 8259 PIC, 100 Hz PIT, `int 0x80` syscalls
+- 🧠 **Memory**: bitmap PMM, paging (kernel identity-mapped 256 MiB, per-process user space), first-fit heap with coalescing
+- 🛡️ **Hardening**: kernel-stack **guard pages**, `CR0.WP`, ring 3 faults kill only the offender
+- 🐄 **Copy-on-write `fork`** with per-frame refcounts
+- 🔁 **Preemptive round-robin scheduler** (50 ms slices), `swtch()` context switching
+- 🧵 **Threads**: `clone`-style kernel threads, `pthread` create/join, mutex, condvar on a futex
+- 📬 **Signals**: `kill`, `signal`, `sigreturn`, Ctrl-C, interrupts blocking calls
+- 🕐 **Time**: CMOS RTC + PIT clock, `nanosleep`, `clock_gettime`
+- 🖥️ **Console**: ANSI-capable VGA terminal, termios-ish tty (raw mode, winsize, `isatty`), `poll`, `O_NONBLOCK`
+- 🎨 **640x480x32 framebuffer** and raw key up/down events
+
+### 💾 Storage
+- 📦 **tar initrd** (read-only) and **ramfs** on `/tmp` behind a **VFS** with a mount table
+- 💽 **ATA PIO driver** exposed as `/dev/hd0`
+- 🗄️ **bobfs**: own on-disk filesystem (1 KiB blocks, 128 inodes, 12 direct + 1 indirect) on `/disk`
+- 🔌 **Pipes** (4 KiB ring buffer, blocking, EOF/EPIPE) and fd inheritance with `dup`/`dup2`
+
+### 📚 Userland
+- 🧰 **Own libc**: stdio (`FILE`, `printf` with floats), `malloc`, string, ctype, `qsort`, `scanf` family, `setjmp`, time, **musl libm**
+- 🐚 **`sh`**: quoting, `$VAR`, globbing, `&& || ;  &`, `2>&1`, `if/for/while`, scripts, raw-mode line editor with **history and Tab completion**
+- 🛠️ **78 programs**: `ls cat grep sed sort uniq find diff xxd head tail tr cut xargs more expr test printf ...`
+- ✏️ **`vi`**: normal / insert / `:` modes
+- 🌙 **Lua 5.1** interpreter
+- 👹 **Doom** (doomgeneric + Freedoom), ~60 fps under QEMU
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    subgraph U["👤 Ring 3: user space"]
+        direction LR
+        SH["sh<br/>line editor, pipes, scripts"]
+        CU["coreutils<br/>ls cat grep sed ..."]
+        APPS["vi · lua · doom"]
+        LIBC["libc.a<br/>stdio malloc string libm pthread"]
+        SH --- LIBC
+        CU --- LIBC
+        APPS --- LIBC
+    end
+
+    SYS{{"int 0x80 · Linux i386 numbering"}}
+
+    subgraph K["🧬 Ring 0: kernel"]
+        direction TB
+        subgraph PROC["Process layer"]
+            direction LR
+            SCH["scheduler<br/>round-robin, 50 ms"]
+            FORK["fork (COW) · exec · wait"]
+            SIG["signals"]
+            THR["threads + futex"]
+        end
+        subgraph FS["Filesystem layer"]
+            direction LR
+            VFS["VFS + mount table<br/>per-process fd table"]
+            TAR["initrd tar<br/>/"]
+            RAM["ramfs<br/>/tmp"]
+            BOB["bobfs<br/>/disk"]
+            DEVFS["devfs<br/>/dev/hd0"]
+            PIPE["pipes"]
+            VFS --> TAR & RAM & BOB & DEVFS & PIPE
+        end
+        subgraph MM["Memory layer"]
+            direction LR
+            PMM["PMM<br/>bitmap + refcounts"]
+            PG["paging<br/>per-process PD"]
+            HEAP["kernel heap"]
+        end
+        subgraph DRV["Drivers"]
+            direction LR
+            KBD["PS/2 kbd"]
+            VGA["VGA text + ANSI"]
+            FB["framebuffer"]
+            ATA["ATA PIO"]
+            PIT["PIT 100 Hz"]
+            RTC["CMOS RTC"]
+        end
+    end
+
+    subgraph HW["🔩 Hardware / QEMU"]
+        direction LR
+        CPU["i686 CPU"]
+        DISK["IDE disk"]
+        SCREEN["VGA / LFB"]
+        PS2["PS/2"]
+    end
+
+    U ==>|syscalls| SYS ==> K
+    PROC --> MM
+    FS --> DRV
+    DRV --> HW
+    MM --> HW
+```
+
+### 🥾 Boot sequence
+
+```mermaid
+sequenceDiagram
+    participant G as GRUB
+    participant B as boot.S
+    participant K as kernel_main
+    participant P as init (sh)
+    G->>B: load myos.kernel + initrd module, jump to _start
+    B->>K: 16 KiB stack, kernel_early, global ctors
+    K->>K: GDT/IDT/PIC/PIT, PMM, paging, heap, TSS
+    K->>K: mount initrd on /, ramfs on /tmp, bobfs on /disk
+    K->>P: proc_spawn("/bin/sh") from init= cmdline
+    P->>P: fork + execve + waitpid loop
+    Note over K,P: pid 0 sleeps in waitpid; on exit, kernel shell starts
+```
+
+### 🗺️ Virtual address space
+
+```
+0x00000000 ┌──────────────────────────────┐
+           │ kernel + identity map 256 MiB│  shared by every address space
+0x10000000 ├──────────────────────────────┤
+           │ user ELF segments + stack    │  per-process page tables
+0x20000000 │ user heap (brk / malloc)     │
+0x40000000 ├──────────────────────────────┤
+           │            ...               │
+0xE0000000 ├──────────────────────────────┤
+           │ kernel stacks (16 KiB each)  │  each preceded by an unmapped guard page
+           └──────────────────────────────┘
+```
+
+### 📞 Syscalls
+
+Numbered like Linux i386, called through `int 0x80`.
+
+| Area | Calls |
+|---|---|
+| Process | `exit` `fork` `execve` `waitpid` `getpid` `clone` `futex` `sched_yield` `kill` `signal` `sigreturn` |
+| Files | `open` `close` `read` `write` `lseek` `stat` `readdir` `unlink` `mkdir` `chdir` `getcwd` |
+| FDs | `dup` `dup2` `pipe` `fcntl` `poll` |
+| Memory | `brk` |
+| Time | `time` `clock_gettime` `nanosleep` |
+| TTY / display | `tcgetattr` `tcsetattr` `tcsetraw` `fb_init` `fb_exit` |
+
+Full details, data structures and diagrams of fork/exec/wait, the scheduler, the interrupt path and
+the VFS live in **[docs/architecture.md](docs/architecture.md)**.
+
+### 🗂️ Repo layout
+
+```
+kernel/arch/i386/   boot.S swtch.S isr_stubs.S linker.ld
+                    cpu/ (gdt idt isr proc signal user_exec)   mm/ (pmm paging heap syscall)
+                    dev/ (console keyboard timer pic vga fb ata rtc)   fs/ (vfs ramfs bobfs pipe ...)
+                    shell/ (kernel shell)  interrupts/  tss/
+kernel/kernel/      kernel.c (kernel_main)
+libc/               libk.a (kernel) and libc.a (user) + headers, musl libm
+user/               sh, coreutils, vi, test programs (built into initrd/bin)
+doom/  lua/         vendored doomgeneric (+ platform layer) and Lua 5.1
+toolchain/          crt0.S, user.ld, i686-bobliu-gcc wrapper
+docs/               architecture.md, screenshots
+```
+
+## 🎬 Demo script
+
+A 3 minute tour that shows off the whole stack:
 
 ```sh
-./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/myprog user/myprog.c
+# 1. boot, then show the OS is real
+uname -a ; cat /hello.txt ; ls /bin | wc -l
+
+# 2. processes: copy-on-write fork, 40 short-lived children
+forktest
+
+# 3. pipes and the shell language
+ls /bin | grep test | sort | head -n 5
+for f in a b c ; do echo $f > /tmp/$f ; done ; cat /tmp/a /tmp/b /tmp/c
+
+# 4. persistent filesystem (kernel shell: run `mkfs` once, then reboot)
+echo persisted > /disk/note ; cat /disk/note
+
+# 5. an interpreter running on top of it all
+lua -e "for i=1,5 do print(i, i*i, math.sqrt(i)) end"
+
+# 6. the finale
+doom -warp 1 1 -skill 2
 ```
 
-## User programs
+**Doom controls:** arrows move/turn · Ctrl fire · Space use · Shift run · Alt strafe · 1-7 weapons · Esc menu.
 
-| Program | What it does |
+## 🧪 Test programs
+
+Run any of these inside bobliu; each prints its own pass/fail lines.
+
+| Test | Covers |
 |---|---|
-| `doom` | Doom (Freedoom). Arrows move/turn, Ctrl fire, Space use, Shift run, Alt strafe, `,` `.` strafe, 1-7 weapons, Esc menu. Extra args go to doom (`doom -warp 1 1 -skill 2`, `-fps` prints the average frame rate on quit). The IWAD is Freedoom 0.12.1 (BSD licence, `doom/wad/COPYING.txt`), committed as `doom/wad/freedoom1.wad` (27 MB); `./iso.sh` copies it into the initrd (a ~28 MB module), so `./iso.sh` needs nothing extra. Any other IWAD dropped into `doom/wad/` is copied too. Saves go to `/tmp` |
-| `fbtest` | Graphics demo: switches to 640x480, white square moves with held arrow keys, Esc returns to text mode |
-| `vi` | Lite vi editor (`vi <file>`): NORMAL/INSERT/`:` modes, h j k l and arrows, `0 $ gg G x dd o O i a A I u`, `:w :q :q! :wq :x`. Uses `tcsetraw` (raw console) and the ANSI subset of the VGA terminal |
-| `sh` | The user shell: prompt `$ `, splits on spaces (max 16 args), runs `/bin/<cmd>` (or a path containing `/`) via `fork` + `execv` + `waitpid`. Prints `sh: <cmd>: not found` if `execv` fails and `[exit N]` for a nonzero status. Supports `> file` and `>> file` redirection of stdout (as separate words). Built-ins: `cd`, `pwd`, `exit`. Reads its line in raw console mode (line editor, Tab completion, history, see below) |
-| `hello` | Prints a greeting, its pid and some libc output |
-| `echo` | Prints its arguments |
-| `cat` | `cat <file>...`: opens each file with `open`, copies it to stdout, prints `cat: <file>: cannot open` on failure |
-| `ls` | `ls [dir]` (default `/`): lists a directory with `readdir_at`, showing `name/` for directories and `name  (N bytes)` for files |
-| `forktest` | `fork` + `waitpid` exit status, `fork` + `execv`, then 40 short-lived children to check that memory comes back |
-| `cp`, `rm`, `mkdir` | `cp <src> <dst>`, `rm <path>...` (files and empty dirs), `mkdir <path>...`; writes only work on `/tmp` (and `/dev/hd0`) |
-| `hd` | `hd <file> [offset] [len]`: hex dump, e.g. `hd /dev/hd0 0 64` |
-| `fdtest` | `dup`/`dup2`, shared offsets across `fork`, closing stdout and restoring it, and no fd leak over 40 forks |
-| `memtest` | `sbrk`/`brk`, `malloc`/`free` reuse and coalescing, `calloc`/`realloc`, copy-on-write heap after `fork`, children that grow the heap and exit |
-| `wtest` | Create/write/append/truncate on `/tmp`, initrd stays read-only, `mkdir`/`unlink`, unlink-while-open, shared fd writes across `fork`, create/delete churn |
-| `crash` | Checks that bad syscall arguments are rejected, a failed `execv` returns, and a NULL write kills only this process |
+| `forktest` | COW fork, exec, exit status, 40 forks without leaking frames |
+| `fdtest` | `dup`/`dup2`, shared offsets, no fd leak |
+| `memtest` | `brk`, `malloc`/`free`, COW heap |
+| `wtest` | writes, append, truncate, unlink, read-only initrd |
+| `pipetest` `sigtest` `threadtest` `timetest` `polltest` | pipes, signals, threads, time, poll |
+| `stdiotest` `floattest` `envtest` `ttytest` | libc stdio, floats and libm, environment, termios |
+| `crash` | bad syscall args and NULL writes kill only the offender |
 
-**Shell line editor** (`user/sh.c`): the shell switches the console to raw mode (`tcsetraw(1)`) while reading a line and back to cooked before running a child, so children and Ctrl-C behave as before. Keys: printable chars insert at the cursor, Backspace, Delete, Left/Right, Home/End (Ctrl-A/Ctrl-E), Ctrl-U (kill text before the cursor), Ctrl-C (cancel line), Ctrl-D (exit on an empty line), Up/Down (last 16 lines of history), Enter. Tab completes the word under the cursor: builtins plus `/bin` for the first word (or after `|`), otherwise paths via `readdir_at` (directories get `/`, files a space). With several matches the common prefix is filled in and a second Tab lists them. The redraw uses `\b` as "cursor left" in the VGA terminal (`tty.c`). Lines are limited to 127 characters; a bare Esc key blocks until the next two bytes arrive.
+## 🗺️ Roadmap
 
-## Shell reference
+Mapped to the OSDev phases. Status reflects what is in the tree.
 
-There are two shells.
+| Phase | Milestone | Status |
+|---|---|---|
+| I | Bare bones, Multiboot, GDT, memory, interrupts, keyboard, VFS | ✅ |
+| II | Ring 3, ELF loader, syscalls, toolchain, libc, fork/exec, shell, file syscalls | ✅ |
+| II | COW fork, stack guards, `brk`/`malloc`, writable `/tmp`, ATA disk | ✅ |
+| II+ | cwd, pipes, signals, **bobfs**, tab completion, `vi` | ✅ |
+| III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 78 programs | ✅ |
+| III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
+| III | **neovim** port | 🚧 lua, env, tty, poll done; libuv next |
+| IV | Networking, sound, USB, GUI | 💭 not started |
 
-**User shell** (`/bin/sh`, default GRUB entry): see the table above. Type `exit` to leave it,
-after which the kernel prints `[init exited]` and the kernel shell starts.
+## ⚠️ Known limitations
 
-**Kernel shell**: runs from the kernel main loop (`shell_poll`), not inside the keyboard IRQ, so
-commands such as `exec` can block. Commands are split on spaces (no quoting, up to 16 tokens)
-and the line buffer is 128 characters. Paths may be absolute or relative to the working
-directory; `.` and `..` are resolved. While the kernel shell is waiting for a program started
-with `exec`, keyboard lines go to that program's stdin instead.
+Honest list; details in [docs/architecture.md](docs/architecture.md#11-known-limitations).
 
-| Command | Description |
-|---|---|
-| `help` | List commands (the built-in text omits `uptime`) |
-| `clear` | Clear the screen |
-| `echo <text...>` | Print arguments separated by single spaces |
-| `ticks` | Raw PIT tick count (100 Hz) |
-| `uptime` | Seconds since boot (`ticks / 100`) |
-| `mem` | Physical frame totals: total, free, used, in frames and KiB |
-| `alloc <bytes>` | Call `kmalloc` and print the pointer and heap usage (the block is never freed) |
-| `pwd` | Print the working directory |
-| `cd [path]` | Change directory (default `/`) |
-| `ls [path]` | List a directory |
-| `cat <path>` | Print a file |
-| `hexdump <path>` | Hex plus ASCII dump, 16 bytes per row |
-| `exec <path> [args...]` | Load an ELF from the VFS, run it as a process with the given arguments, and wait for it (prints `[pid N exited with S]` for a nonzero status) |
-| `ps` | List processes: pid, parent pid, state, name |
-| `panic` | Execute `ud2` to trigger an invalid-opcode exception dump |
+- Single core, max **16 processes**, **16 fds** each, 16 args of 128 bytes
+- `/tmp` is RAM (256 KiB per file); `bobfs` has 128 files, 268 KiB per file, 27 char names, no cache or journal
+- stdin is one global console buffer; no process groups
+- Kernel-mode exceptions halt the machine; OOM during a COW fault kills the process
+- VGA/framebuffer only, no sound, no networking, no serial console
 
-## Example session
+## 🙏 Credits
 
-Booting the default "user shell" entry:
+- 📖 [OSDev wiki](https://wiki.osdev.org/) and its Meaty Skeleton
+- 👹 [doomgeneric](https://github.com/ozkl/doomgeneric) and [Freedoom](https://freedoom.github.io/) (BSD licensed IWAD, see `doom/wad/COPYING.txt`)
+- 🌙 [Lua 5.1](https://www.lua.org/) (MIT) and [musl libm](https://musl.libc.org/)
 
-```
-Bobliu's kernel
-bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
-$ echo hello world
-hello world
-$ hello
-hello from userland!
-pid=3 strlen=6 hex=beef str=libc works
-$ forktest
-parent pid=4
-child  pid=5 (fork returned 0)
-parent: reaped 5, exit status 7
-cow isolation: ok
-hello from userland!
-pid=6 strlen=6 hex=beef str=libc works
-parent: exec child done, status 0
-parent-writes-first: ok
-40 forks ok
-$ ls /bin
-cat  (35340 bytes)
-echo  (31500 bytes)
-crash  (33100 bytes)
-sh  (41196 bytes)
-forktest  (37848 bytes)
-hello  (32904 bytes)
-ls  (35964 bytes)
-$ cat /hello.txt
-Hello, world!$ nope
-sh: nope: not found
-[exit 127]
-$ exit
-[init exited]
-Kernel shell ready. Type 'help'.
-bobliu:/> ps
-PID PPID STATE    NAME
-0   0    running  kernel
-bobliu:/> exec /bin/echo back in the kernel shell
-back in the kernel shell
-bobliu:/>
-```
+<div align="center">
 
-The exact pids, the middle of the `forktest` output and the listings depend on your build;
-pids are never reused within a boot.
+**Built by [@Bobliuuu](https://github.com/Bobliuuu)** · from `_start` to DOOM 🔥
 
-## Repository layout
-
-```
-boot / kernel   kernel/arch/i386/   boot.S, swtch.S, isr_stubs.S, linker.ld,
-                                    cpu/ (gdt idt isr proc user_exec) mm/ (pmm paging heap syscall)
-                                    dev/ (console keyboard timer pic vga) fs/ shell/ tss/ interrupts/ ...
-                kernel/kernel/      kernel.c (kernel_main)
-                kernel/include/     kernel headers; kernel/syscall.h is shared with user code
-libc            libc/               libk.a (kernel) and libc.a (user space), headers in libc/include
-user programs   user/               sh, hello, echo, cat, ls, forktest, crash (built into initrd/bin)
-toolchain       toolchain/          crt0.S, user.ld, i686-bobliu-gcc, build.sh
-initrd          initrd/             files packed into the tar module (initrd/bin is generated)
-scripts         iso.sh qemu.sh build.sh headers.sh config.sh clean.sh
-docs            docs/architecture.md
-```
-
-## Documentation
-
-[docs/architecture.md](docs/architecture.md) covers the boot flow, memory layout, interrupt
-path, the process model (copy-on-write fork, exec/wait/exit and the scheduler), the syscall ABI, the VFS and per-process fd table, the
-build pipeline and the shells, with diagrams, plus a list of known limitations.
-
-## Known limitations
-
-The short version (details in the architecture doc): `/tmp` (RAM, lost at reboot, 256 KiB
-per file), `/disk` (bobfs, 268 KiB per file, 128 files, 27-character names, no cache or journal) and `/dev/hd0` are writable, there are no
-process groups, user
-processes have no working directory (paths are absolute), at most 16 processes, 16 fds each, and
-16 arguments of 128 bytes, `envp` is ignored, stdin is one global console buffer, blocking
-happens only in `waitpid` and `read`, the pid 0 boot stack has no guard page, kernel-mode
-exceptions halt the machine, an out-of-memory during a copy-on-write fault kills the process,
-and some dead code (for example `kernel/arch/i386/elf/elf.c`) is still compiled in.
+</div>

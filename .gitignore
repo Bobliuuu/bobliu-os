@@ -27,3 +27,6 @@ disk.img
 doom/build/
 initrd/share/
 lua/build/
+
+# logs
+qemu.log
