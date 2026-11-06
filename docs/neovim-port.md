@@ -21,7 +21,7 @@ Lua 5.1, libm, float printf/strtod, `setjmp`, `scanf`, environment, termios + AN
 | libvterm | Pure C, for `:terminal` (can be disabled for the first boot) |
 | tree-sitter runtime | Pure C. Parsers optional |
 | lpeg | Pure C, needs only the Lua API |
-| utf8proc | Pure C |
+| utf8proc | Not needed: neovim v0.10.4 vendors its own Unicode tables in `src/unicode` |
 
 ## Kernel and libc gaps (milestone 1)
 
@@ -41,7 +41,7 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 |---|---|---|
 | 1 | libc headers and kernel syscalls above | **Done.** `posixtest` passes 35/35 under QEMU; existing tests unchanged |
 | 2 | libuv builds and runs | **Done.** `uvtest` (timers, pipes, thread async wakeup, threadpool fs) and `uvtest2` (spawn with a piped child, exit callback, tty init/winsize/raw mode) pass under QEMU |
-| 3 | Pure-C deps (msgpack, unibilium, libvterm, tree-sitter, lpeg, utf8proc, luv) | Each links into a `deps/` archive |
+| 3 | Pure-C deps (msgpack, unibilium, libvterm, tree-sitter + 6 parsers, lpeg, luv) | **Done.** `depstest` passes 12/12 under QEMU |
 | 4 | Host codegen | Neovim's generated sources are produced on the host with host `luajit` and cmake |
 | 5 | Cross-build `nvim` | `nvim` binary links against the bobliu libc |
 | 6 | `nvim --version`, then `nvim --headless -c 'q'` | Exits 0 under QEMU |
@@ -76,3 +76,12 @@ Kernel and libc changes this needed, beyond milestone 1:
 - libuv patch: `uv_spawn` cannot use `socketpair`, so a piped stdio container uses a one-way `pipe()`. A container that asks for both directions fails with `UV_ENOTSUP`.
 
 Known gaps: `FD_CLOEXEC` is recorded nowhere (`F_SETFD` is a no-op), so `uv_spawn` returns only after the child exits when it leaves the exec-status pipe open. Sockets, `getaddrinfo` and `dlopen` still fail.
+
+## Milestone 3 notes
+
+`ports/neovim/build-deps.sh` downloads the pinned sources and builds `libmsgpack-c.a`, `libunibilium.a`, `libvterm.a`, `liblpeg.a`, `libluv.a`, `libtree-sitter.a`, `libts-parsers.a` (c, lua, vim, vimdoc, query, markdown, markdown_inline) and `liblua.a` into `$WORK/prefix`, then links `depstest` against all of them. `depstest` checks a msgpack round trip, a unibilium dump/load, libvterm screen text, an lpeg match, a Lua script running libuv timers through luv, and one parse per tree-sitter language.
+
+- libuv gained `ports/neovim/libuv-bobliu.c`: `uv_uptime` is real, `uv_exepath` and `uv_cpu_info` return `UV_ENOSYS`, memory and load figures are zero, and there are no network interfaces.
+- neovim vendors `bit`, cjson, klib, mpack, termkey, xdiff and Unicode tables itself, so those are built with neovim in milestone 5.
+- libc gained `strnlen`, `wchar.h`, `getprotobyname` (always NULL) and the missing `AI_*`, `SIZE_MAX` constants.
+- The vimdoc parser reports a missing `<` on any non-empty text. A native build of the same parser does the same, so `depstest` checks vimdoc loosely.

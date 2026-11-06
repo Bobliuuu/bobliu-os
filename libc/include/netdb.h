@@ -7,6 +7,12 @@ struct addrinfo { int ai_flags, ai_family, ai_socktype, ai_protocol; socklen_t a
 #define AI_CANONNAME 2
 #define AI_NUMERICHOST 4
 #define AI_NUMERICSERV 0x400
+#define AI_V4MAPPED 8
+#define AI_ALL 0x10
+#define AI_ADDRCONFIG 0x20
+#define NI_NAMEREQD 8
+#define NI_DGRAM 16
+#define NI_NOFQDN 4
 #define NI_NUMERICHOST 1
 #define NI_NUMERICSERV 2
 #define NI_MAXHOST 1025
@@ -21,6 +27,9 @@ struct addrinfo { int ai_flags, ai_family, ai_socktype, ai_protocol; socklen_t a
 #define EAI_SOCKTYPE (-7)
 #define EAI_SYSTEM (-11)
 #define EAI_OVERFLOW (-12)
+struct protoent { char* p_name; char** p_aliases; int p_proto; };
+struct servent { char* s_name; char** s_aliases; int s_port; char* s_proto; };
+struct hostent { char* h_name; char** h_aliases; int h_addrtype; int h_length; char** h_addr_list; };
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,6 +37,10 @@ int getaddrinfo(const char* node, const char* service, const struct addrinfo* hi
 void freeaddrinfo(struct addrinfo* ai);
 int getnameinfo(const struct sockaddr* sa, socklen_t sl, char* host, socklen_t hl, char* serv, socklen_t sv, int flags);
 const char* gai_strerror(int code);
+struct protoent* getprotobyname(const char* name);   /* no /etc/protocols: always NULL */
+struct protoent* getprotobynumber(int num);
+struct servent* getservbyname(const char* name, const char* proto);
+struct hostent* gethostbyname(const char* name);
 #ifdef __cplusplus
 }
 #endif

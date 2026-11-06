@@ -22,6 +22,7 @@
 #include <sys/uio.h>
 #include <sys/utsname.h>
 #include <netdb.h>
+#include <wchar.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <dlfcn.h>
@@ -639,3 +640,9 @@ int scandir(const char* path, struct dirent*** list, int (*filter)(const struct 
     *list = v;
     return n;
 }
+struct protoent* getprotobyname(const char* n) { (void)n; return 0; }
+struct protoent* getprotobynumber(int n) { (void)n; return 0; }
+struct servent* getservbyname(const char* n, const char* p) { (void)n; (void)p; return 0; }
+struct hostent* gethostbyname(const char* n) { (void)n; return 0; }
+size_t wcslen(const wchar_t* s) { size_t n = 0; while (s[n]) n++; return n; }
+size_t strnlen(const char* s, size_t n) { size_t i = 0; while (i < n && s[i]) i++; return i; }

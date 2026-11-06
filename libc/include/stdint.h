@@ -29,4 +29,13 @@ typedef unsigned long int uintptr_t;
 #define INT32_MAX  2147483647
 #define INT64_MAX  9223372036854775807ll
 
+#ifndef SIZE_MAX
+#define SIZE_MAX 0xFFFFFFFFu
+#endif
+#ifndef SSIZE_MAX
+#define SSIZE_MAX 0x7FFFFFFF
+#endif
+#ifndef PTRDIFF_MAX
+#define PTRDIFF_MAX 0x7FFFFFFF
+#endif
 #endif

@@ -28,6 +28,7 @@ src/unix/no-fsevents.c"
 for f in $SRCS; do
   $CC -c -O2 -Iinclude -Isrc -D_GNU_SOURCE -D__GNU__ "$f" -o "$OUT/$(echo "$f" | tr / _ | tr -d .).o"
 done
+$CC -c -O2 -Iinclude -D__GNU__ "$HERE/libuv-bobliu.c" -o "$OUT/bobliu.o"
 rm -f "$WORK/build/libuv.a"
 i686-elf-ar rcs "$WORK/build/libuv.a" "$OUT"/*.o
 echo "built $WORK/build/libuv.a"

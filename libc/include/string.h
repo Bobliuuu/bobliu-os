@@ -23,6 +23,7 @@ int strncmp(const char* a, const char* b, size_t n);
 char* strncpy(char* dst, const char* src, size_t n);
 char* strrchr(const char* s, int c);
 char* strerror(int errnum);
+size_t strnlen(const char* s, size_t n);
 int strcoll(const char* a, const char* b);
 char* strdup(const char* s);
 char* strncat(char* dst, const char* src, size_t n);
