@@ -944,7 +944,8 @@ int main(int argc, char** argv) {
         if (nl > 0 && nl < 32) { memcpy(name, *e, nl); name[nl] = 0; set_var(name, eq + 1); }
     }
     if (!getenv("PATH")) setenv("PATH", "/bin", 1);
-    if (!getenv("HOME")) setenv("HOME", "/", 1);
+    if (!getenv("HOME")) setenv("HOME", "/tmp", 1);          /* "/" is read-only, programs want a writable home */
+    if (!getenv("NVIM_LOG_FILE")) setenv("NVIM_LOG_FILE", "/tmp/nvim.log", 1);
     if (!getenv("USER")) setenv("USER", "root", 1);
     if (!getenv("TERM")) setenv("TERM", "bobliu", 1);
     for (char** e = environ; e && *e; e++) {

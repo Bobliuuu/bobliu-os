@@ -107,8 +107,8 @@ static void ansi_final(char f) {
 	size_t cur = terminal_row * VGA_WIDTH + terminal_column;
 	wrap_pending = 0;
 	if (esc_priv) {
-		if (f == 'l' && a == 25) cursor_hidden = 1;
-		else if (f == 'h' && a == 25) cursor_hidden = 0;
+		if (esc_priv == 1 && f == 'l' && a == 25) cursor_hidden = 1;
+		else if (esc_priv == 1 && f == 'h' && a == 25) cursor_hidden = 0;
 		return;
 	}
 	switch (f) {
@@ -181,23 +181,39 @@ static void ansi_final(char f) {
 
 static void terminal_putchar_raw(char c);
 
+// esc_state: 0 plain, 1 saw ESC, 2 inside CSI, 3 ESC + intermediate (one more byte to swallow),
+// 4 inside an OSC/DCS-style string (swallowed until BEL or ESC \)
 void terminal_putchar(char c) {
+	unsigned char u = (unsigned char)c;
 	if (esc_state == 0 && c != 27) { terminal_putchar_raw(c); cursor_sync(); return; }
 	if (esc_state == 0) { esc_state = 1; return; }
+	if (esc_state == 4) {
+		if (c == 7) esc_state = 0;
+		else if (c == 27) esc_state = 1;      // maybe ESC \ (string terminator): the '\' is eaten below
+		return;
+	}
+	if (esc_state == 3) { esc_state = 0; return; }       // e.g. the 'B' of ESC ( B
 	if (esc_state == 1) {
 		if (c == '[') { esc_state = 2; esc_n = 0; esc_priv = 0; for (int i = 0; i < ESC_MAXP; i++) esc_par[i] = 0; }
+		else if (c == ']' || c == 'P' || c == '_' || c == '^' || c == 'X') esc_state = 4;
+		else if (u >= 0x20 && u <= 0x2F) esc_state = 3;   // ESC ( B, ESC # 8 ...
 		else {
 			esc_state = 0;
 			if (c == '7') { sv_row = (int)terminal_row; sv_col = (int)terminal_column; }
 			else if (c == '8') { terminal_row = (size_t)sv_row; terminal_column = (size_t)sv_col; wrap_pending = 0; cursor_sync(); }
 			else if (c == 'c') { sgr(0); update_color(); esc_priv = 0; esc_par[0] = 2; ansi_final('J'); terminal_row = terminal_column = 0; cursor_sync(); }
+			// anything else (ESC =, ESC >, ESC \ ...) is a complete sequence we do not act on
 		}
 		return;
 	}
+	// inside CSI: parameter bytes 0-9 ; and the private markers < = > ?, intermediate bytes, final byte
 	if (c >= '0' && c <= '9') { if (esc_n < ESC_MAXP) esc_par[esc_n] = esc_par[esc_n] * 10 + (c - '0'); }
-	else if (c == ';') { if (esc_n < ESC_MAXP - 1) esc_n++; }
+	else if (c == ';' || c == ':') { if (esc_n < ESC_MAXP - 1) esc_n++; }
 	else if (c == '?') esc_priv = 1;
-	else { esc_state = 0; ansi_final(c); cursor_sync(); }
+	else if (c == '<' || c == '=' || c == '>') esc_priv = 2;     // e.g. ESC[>4;2m: not an SGR, must not be run as one
+	else if (u >= 0x20 && u <= 0x2F) { }                         // intermediate (ESC[ q, ESC[!p): swallow
+	else if (u >= 0x40 && u <= 0x7E) { esc_state = 0; ansi_final(c); cursor_sync(); }
+	else esc_state = 0;                                          // a control byte inside a sequence aborts it
 }
 
 static void terminal_putchar_raw(char c) {

@@ -305,7 +305,7 @@ Mapped to the OSDev phases. Status reflects what is in the tree.
 | III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 79 programs | ✅ |
 | III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
 | III | **kilo** editor with syntax highlighting | ✅ |
-| III | **neovim** port | 🚧 in progress, plan in [docs/neovim-port.md](docs/neovim-port.md). POSIX layer, libuv and all pure-C dependencies generated sources and the `nvim` cross-build done (milestones 1-5 of 7). Next: boot it |
+| III | **neovim** port | 🚧 in progress, plan in [docs/neovim-port.md](docs/neovim-port.md). POSIX layer, libuv and all pure-C dependencies generated sources, cross-build, boot and headless editing done (milestones 1-6 of 7). `nvim --headless` edits and saves files on bobliu; the full-screen TUI does not stay up yet |
 | IV | Networking, sound, USB, GUI | 💭 not started |
 
 ## ⚠️ Known limitations

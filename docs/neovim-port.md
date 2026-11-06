@@ -44,8 +44,8 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 | 3 | Pure-C deps (msgpack, unibilium, libvterm, tree-sitter + 6 parsers, lpeg, luv) | **Done.** `depstest` passes 12/12 under QEMU |
 | 4 | Host codegen | **Done.** `gen-nvim-sources.sh` produces 363 generated headers on the host, 0 failures |
 | 5 | Cross-build `nvim` | **Done.** 186 neovim sources compile and link into a 4.8 MB `nvim` against bobliu's libc |
-| 6 | `nvim --version`, then `nvim --headless -c 'q'` | Exits 0 under QEMU |
-| 7 | Interactive editing | Edit, `:w`, `:q`, syntax highlighting with a built-in runtime |
+| 6 | `nvim --version`, then `nvim --headless -c 'q'` | **Done.** Both run under QEMU; `--headless -c q` exits 0 with no messages |
+| 7 | Interactive editing | **Partly done.** Headless editing works (insert text, `:write`, `:q`, file contents verified). The full-screen TUI starts and exits immediately, see notes |
 
 ## Risks
 
@@ -101,3 +101,21 @@ Known gaps: `FD_CLOEXEC` is recorded nowhere (`F_SETFD` is a no-op), so `uv_spaw
 What the compile found missing in libc, all now added: `intmax_t` and the `PRI*` macros, `iconv.h` (every conversion fails), `pty.h` (fails with ENOSYS), `strtoll`/`strtoull`/`strtoimax`, `llabs`, `strtok_r`, `tzset`, `getpwent`, `fpclassify` and `FP_*`, more `termios` control characters, `O_NOFOLLOW`, `F_DUPFD_CLOEXEC`, `S_IREAD`/`S_IWRITE`, `luv/luv.h`.
 
 Not done yet: the tree-sitter parsers are linked statically, but neovim loads parsers with `dlopen`, so none are registered. That is a patch for later.
+
+## Milestone 6 and 7 notes
+
+Verified under QEMU: `nvim --version` prints `NVIM v0.10.4 ... Lua 5.1`; `nvim --headless -c q` exits 0 silently; and
+
+    nvim --headless -c 'edit /tmp/hi.txt' -c 'normal ihello from nvim on bobliu' -c write -c q
+
+writes `"~/hi.txt" [New] 1L, 26B written`, after which `cat /tmp/hi.txt` prints `hello from nvim on bobliu`. That exercises the Vim engine, the embedded Lua runtime, the event loop, buffers, normal mode and file writing.
+
+What it took beyond milestone 5:
+
+- `ports/neovim/stage-runtime.sh` puts a 3.3 MB runtime (Lua modules, filetype detection, core and a few language syntax scripts, colour schemes) into `initrd/share/nvim/runtime`; `pathdef.h` points `VIMRUNTIME` there.
+- `sh` now defaults `HOME` to `/tmp` (`/` is read-only, and nvim writes its ShaDa and swap state under `$HOME`) and sets `NVIM_LOG_FILE=/tmp/nvim.log`.
+- The VGA terminal's escape parser was rewritten: it swallows private-marker sequences such as `ESC[>4;0m`, intermediate bytes, `ESC ( B` and OSC strings instead of printing the tail as text.
+
+Remaining warnings in a headless run are harmless: no server socket (`address family not supported`, so no RPC over a socket), and `tempdir root has invalid permissions` because bobliu has no permission bits (nvim falls back to `/tmp/XXXXXX`).
+
+Not working: the full-screen TUI. `nvim file` clears the screen and returns to the shell within seconds, with nothing in `/tmp/nvim.log`. The TUI client normally spawns `nvim --embed` as a child and talks to it over pipes, so the next step is to find out whether the spawn, the pipe protocol or the terminal setup is what fails.
