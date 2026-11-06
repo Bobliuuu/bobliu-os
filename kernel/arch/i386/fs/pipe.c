@@ -29,8 +29,8 @@ int pipe_create(vnode_t** rd, vnode_t** wr) {
     memset(p, 0, sizeof(*p));
     p->id = g_next_id++;
     p->readers_open = p->writers_open = 1;
-    p->rd.ops = &g_rd_ops; p->rd.fs_data = p;
-    p->wr.ops = &g_wr_ops; p->wr.fs_data = p;
+    p->rd.ops = &g_rd_ops; p->rd.fs_data = p; p->rd.kind = VK_FIFO;
+    p->wr.ops = &g_wr_ops; p->wr.fs_data = p; p->wr.kind = VK_FIFO;
     *rd = &p->rd;
     *wr = &p->wr;
     return 0;

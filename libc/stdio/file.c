@@ -75,6 +75,21 @@ FILE* fopen(const char* path, const char* mode) {
     return f;
 }
 
+FILE* fdopen(int fd, const char* mode) {
+    int plus = strchr(mode, '+') != 0, fl;
+    switch (mode[0]) {
+    case 'r': fl = F_READ | (plus ? F_WRITE : 0); break;
+    case 'w': fl = F_WRITE | (plus ? F_READ : 0); break;
+    case 'a': fl = F_WRITE | F_APPEND | (plus ? F_READ : 0); break;
+    default: errno = EINVAL; return 0;
+    }
+    FILE* f = calloc(1, sizeof(FILE));
+    if (!f) { errno = ENOMEM; return 0; }
+    f->fd = fd; f->flags = fl; f->unget = -1;
+    f->next = g_open; g_open = f;
+    return f;
+}
+
 int fflush(FILE* f) {
     if (!f) {
         int r = 0;

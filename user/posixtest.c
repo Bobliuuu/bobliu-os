@@ -35,7 +35,16 @@ int main(void) {
     CHECK("stat dir", stat("/tmp", &st) == 0 && S_ISDIR(st.st_mode));
     CHECK("stat missing", stat("/tmp/nope", &st) < 0 && errno == ENOENT);
     CHECK("ftruncate 0", ftruncate(fd, 0) == 0 && fstat(fd, &st) == 0 && st.st_size == 0);
-    CHECK("fstat console", fstat(1, &st) == 0 && S_ISCHR(st.st_mode));
+    CHECK("fstat console", fstat(2, &st) == 0 && S_ISCHR(st.st_mode));
+    int pp[2]; pipe(pp);
+    CHECK("fstat pipe is fifo", fstat(pp[0], &st) == 0 && S_ISFIFO(st.st_mode));
+    close(pp[0]); close(pp[1]);
+    int dn = open("/dev/null", O_RDWR);
+    CHECK("/dev/null", dn >= 0 && write(dn, "x", 1) == 1 && read(dn, &st, 1) == 0 && fstat(dn, &st) == 0 && S_ISCHR(st.st_mode));
+    char zb[4] = {1,1,1,1}; int dz = open("/dev/zero", O_RDONLY);
+    CHECK("/dev/zero", dz >= 0 && read(dz, zb, 4) == 4 && zb[0] == 0 && zb[3] == 0);
+    unsigned char rb[16]; memset(rb, 0, sizeof rb); int dr = open("/dev/urandom", O_RDONLY);
+    CHECK("/dev/urandom", dr >= 0 && read(dr, rb, 16) == 16 && (rb[0] | rb[5] | rb[10] | rb[15]) != 0);
     CHECK("access", access("/tmp/px.txt", F_OK) == 0 && access("/tmp/nope", F_OK) < 0);
     CHECK("fsync", fsync(fd) == 0);
     close(fd);

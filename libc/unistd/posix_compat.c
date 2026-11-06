@@ -23,10 +23,15 @@
 #include <sys/utsname.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <dlfcn.h>
 #include <langinfo.h>
 #include <wctype.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <net/if.h>
+#include <sys/statfs.h>
+#include <ifaddrs.h>
 #include <unistd.h>
 #include <kernel/syscall.h>
 
@@ -499,4 +504,138 @@ int pthread_rwlock_unlock(pthread_rwlock_t* l) {
     if (l->writer) l->writer = 0; else if (l->readers > 0) l->readers--;
     rw_unlock(l);
     return 0;
+}
+
+/* ---- directories: opendir/readdir over readdir_at (index based, no fd) ---------------------- */
+
+struct _DIR { char path[PATH_MAX]; int index; struct dirent ent; };
+
+DIR* opendir(const char* path) {
+    struct stat st;
+    if (stat(path, &st) < 0) return 0;
+    if (!S_ISDIR(st.st_mode)) { errno = ENOTDIR; return 0; }
+    DIR* d = calloc(1, sizeof *d);
+    if (!d) { errno = ENOMEM; return 0; }
+    strncpy(d->path, path, sizeof d->path - 1);
+    return d;
+}
+struct dirent* readdir(DIR* d) {
+    char name[DIRENT_NAME_MAX];
+    if (readdir_at(d->path, d->index, name) <= 0) return 0;
+    d->index++;
+    strncpy(d->ent.d_name, name, sizeof d->ent.d_name - 1);
+    d->ent.d_name[sizeof d->ent.d_name - 1] = 0;
+    d->ent.d_ino = d->index;
+    d->ent.d_type = DT_UNKNOWN;
+    return &d->ent;
+}
+int closedir(DIR* d) { free(d); return 0; }
+void rewinddir(DIR* d) { d->index = 0; }
+int dirfd(DIR* d) { (void)d; errno = ENOTSUP; return -1; }
+int getpriority(int w, int i) { (void)w; (void)i; return 0; }
+int setpriority(int w, int i, int p) { (void)w; (void)i; (void)p; return 0; }
+unsigned int if_nametoindex(const char* n) { (void)n; return 0; }
+char* if_indextoname(unsigned int i, char* n) { (void)i; (void)n; errno = ENXIO; return 0; }
+int getifaddrs(struct ifaddrs** ifap) { *ifap = 0; return 0; }
+void freeifaddrs(struct ifaddrs* ifa) { (void)ifa; }
+int statfs(const char* p, struct statfs* s) { (void)p; (void)s; NOSYS(int); }
+int fstatfs(int fd, struct statfs* s) { (void)fd; (void)s; NOSYS(int); }
+const struct in6_addr in6addr_any = { { 0 } };
+const struct in6_addr in6addr_loopback = { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 } };
+long pathconf(const char* p, int n) { (void)p; return n == _PC_NAME_MAX ? 63 : PATH_MAX; }
+long fpathconf(int fd, int n) { (void)fd; return n == _PC_NAME_MAX ? 63 : PATH_MAX; }
+int pthread_getschedparam(pthread_t t, int* pol, struct sched_param* p) { (void)t; *pol = 0; p->sched_priority = 0; return 0; }
+int pthread_setschedparam(pthread_t t, int pol, const struct sched_param* p) { (void)t; (void)pol; (void)p; return 0; }
+
+/* ---- more small pieces libuv wants --------------------------------------------------------- */
+
+int pthread_condattr_init(pthread_condattr_t* a) { a->dummy = 0; return 0; }
+int pthread_condattr_destroy(pthread_condattr_t* a) { (void)a; return 0; }
+int pthread_condattr_setclock(pthread_condattr_t* a, int c) { (void)a; (void)c; return 0; }
+int pthread_atfork(void (*a)(void), void (*b)(void), void (*c)(void)) { (void)a; (void)b; (void)c; return 0; }
+int sched_get_priority_min(int p) { (void)p; return 0; }
+int sched_get_priority_max(int p) { (void)p; return 0; }
+int setuid(uid_t u) { return u == 0 ? 0 : (errno = EPERM, -1); }
+int setgid(gid_t g) { return g == 0 ? 0 : (errno = EPERM, -1); }
+int setgroups(size_t n, const gid_t* g) { (void)n; (void)g; return 0; }
+int lchown(const char* p, uid_t u, gid_t g) { return chown(p, u, g); }
+int getgrgid_r(gid_t gid, struct group* g, char* buf, size_t n, struct group** res) {
+    (void)buf; (void)n;
+    if (gid != 0) { *res = 0; return 0; }
+    *g = g_gr; *res = g; return 0;
+}
+ssize_t preadv(int fd, const struct iovec* iov, int n, off_t off) {
+    int cur = lseek(fd, 0, SEEK_CUR);
+    if (cur < 0 || lseek(fd, off, SEEK_SET) < 0) return -1;
+    ssize_t r = readv(fd, iov, n);
+    lseek(fd, cur, SEEK_SET);
+    return r;
+}
+ssize_t pwritev(int fd, const struct iovec* iov, int n, off_t off) {
+    int cur = lseek(fd, 0, SEEK_CUR);
+    if (cur < 0 || lseek(fd, off, SEEK_SET) < 0) return -1;
+    ssize_t r = writev(fd, iov, n);
+    lseek(fd, cur, SEEK_SET);
+    return r;
+}
+int utimensat(int d, const char* p, const struct timespec ts[2], int f) { (void)d; (void)ts; (void)f; struct stat st; return stat(p, &st); }
+int futimens(int fd, const struct timespec ts[2]) { (void)ts; struct stat st; return fstat(fd, &st); }
+int utimes(const char* p, const void* tv) { (void)tv; struct stat st; return stat(p, &st); }
+int futimes(int fd, const void* tv) { (void)tv; struct stat st; return fstat(fd, &st); }
+
+static void fill_tmpl(char* x) {
+    static unsigned ctr;
+    unsigned v = (unsigned)getpid() * 2654435761u + ++ctr * 40503u;
+    for (int i = 0; i < 6; i++) { x[i] = "abcdefghijklmnopqrstuvwxyz012345"[v & 31]; v = v * 1103515245u + 12345u; v >>= 3; }
+}
+int mkstemp(char* t) {
+    size_t n = strlen(t);
+    if (n < 6 || strcmp(t + n - 6, "XXXXXX")) { errno = EINVAL; return -1; }
+    for (int tries = 0; tries < 100; tries++) {
+        fill_tmpl(t + n - 6);
+        struct stat st;
+        if (stat(t, &st) < 0) return open(t, O_RDWR | O_CREAT | O_EXCL, 0600);
+    }
+    errno = EEXIST;
+    return -1;
+}
+char* mkdtemp(char* t) {
+    size_t n = strlen(t);
+    if (n < 6 || strcmp(t + n - 6, "XXXXXX")) { errno = EINVAL; return 0; }
+    for (int tries = 0; tries < 100; tries++) {
+        fill_tmpl(t + n - 6);
+        if (mkdir(t, 0700) == 0) return t;
+    }
+    errno = EEXIST;
+    return 0;
+}
+char* ptsname(int fd) { (void)fd; errno = ENOTTY; return 0; }
+int posix_openpt(int f) { (void)f; errno = ENOSYS; return -1; }
+int grantpt(int fd) { (void)fd; errno = ENOTTY; return -1; }
+int unlockpt(int fd) { (void)fd; errno = ENOTTY; return -1; }
+
+int alphasort(const struct dirent** a, const struct dirent** b) { return strcmp((*a)->d_name, (*b)->d_name); }
+int scandir(const char* path, struct dirent*** list, int (*filter)(const struct dirent*),
+            int (*cmp)(const struct dirent**, const struct dirent**)) {
+    DIR* d = opendir(path);
+    if (!d) return -1;
+    struct dirent** v = 0;
+    int n = 0, cap = 0;
+    struct dirent* e;
+    while ((e = readdir(d))) {
+        if (filter && !filter(e)) continue;
+        if (n == cap) {
+            cap = cap ? cap * 2 : 16;
+            struct dirent** nv = realloc(v, cap * sizeof *v);
+            if (!nv) { closedir(d); return -1; }
+            v = nv;
+        }
+        v[n] = malloc(sizeof **v);
+        if (!v[n]) { closedir(d); return -1; }
+        *v[n++] = *e;
+    }
+    closedir(d);
+    if (cmp && n > 1) qsort(v, n, sizeof *v, (int (*)(const void*, const void*))cmp);
+    *list = v;
+    return n;
 }

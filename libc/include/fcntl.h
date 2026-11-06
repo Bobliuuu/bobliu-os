@@ -18,6 +18,9 @@
 #define F_SETFL 4
 #define FD_CLOEXEC 1
 #define O_ACCMODE 3
+#define AT_FDCWD (-100)
+#define AT_SYMLINK_NOFOLLOW 0x100
+#define AT_REMOVEDIR 0x200
 #ifdef __cplusplus
 extern "C" {
 #endif

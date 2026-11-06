@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,7 +61,17 @@ int tcsetpgrp(int fd, pid_t pgrp);
 int chown(const char* path, uid_t u, gid_t g);
 int gethostname(char* name, size_t len);
 int rmdir(const char* path);
+int setuid(uid_t u);
+int setgid(gid_t g);
+int setgroups(size_t n, const gid_t* g);
+int lchown(const char* path, uid_t u, gid_t g);
+ssize_t preadv(int fd, const struct iovec* iov, int n, off_t off);
+ssize_t pwritev(int fd, const struct iovec* iov, int n, off_t off);
 long sysconf(int name);
+long pathconf(const char* path, int name);
+long fpathconf(int fd, int name);
+#define _PC_NAME_MAX 3
+#define _PC_PATH_MAX 4
 #define _SC_ARG_MAX 0
 #define _SC_CLK_TCK 2
 #define _SC_OPEN_MAX 4

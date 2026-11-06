@@ -29,7 +29,8 @@ int sig_send(proc_t* p, int sig) {
     if (sig == 0) return 0;                              // just checking it exists
 
     uint32_t fl = irq_save();
-    if (!(p->group->sig_handler[sig] == SIG_IGN && sig != SIGKILL)) {
+    int dfl_ignored = (sig == SIGCHLD || sig == SIGWINCH) && p->group->sig_handler[sig] == SIG_DFL;   // default action: ignore
+    if (!dfl_ignored && !(p->group->sig_handler[sig] == SIG_IGN && sig != SIGKILL)) {
         p->sig_pending |= 1u << sig;
         if (p->state == PROC_SLEEPING) p->state = PROC_RUNNABLE;   // let it notice
     }
@@ -89,6 +90,7 @@ void sig_deliver(regs_t* tf) {
         uint32_t h = p->group->sig_handler[sig];
         if (sig == SIGKILL) die(sig);
         if (h == SIG_IGN) continue;
+        if (h == SIG_DFL && (sig == SIGCHLD || sig == SIGWINCH)) continue;   // default action: ignore
         if (h == SIG_DFL) die(sig);                       // every default action here is "terminate"
 
         uint32_t sp = (tf->useresp - sizeof(struct sigframe)) & ~3u;

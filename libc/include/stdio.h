@@ -50,6 +50,7 @@ int getc(FILE* f);
 int getchar(void);
 int ungetc(int c, FILE* f);
 char* fgets(char* s, int n, FILE* f);
+FILE* fdopen(int fd, const char* mode);
 int getline(char** lineptr, size_t* n, FILE* f);   /* returns length or -1 */
 int fputc(int c, FILE* f);
 int putc(int c, FILE* f);

@@ -10,6 +10,8 @@
 #define SIGSEGV  11
 #define SIGUSR2  12
 #define SIGTERM  15
+#define SIGCHLD  17
+#define SIGWINCH 28
 #define SIG_DFL  0u
 #define SIG_IGN  1u
 

@@ -1,0 +1,26 @@
+diff --git a/src/unix/process.c b/src/unix/process.c
+index 4812a90..09126ec 100644
+--- a/src/unix/process.c
++++ b/src/unix/process.c
+@@ -203,7 +203,20 @@ static int uv__process_init_stdio(uv_stdio_container_t* container, int fds[2]) {
+     if (container->data.stream->type != UV_NAMED_PIPE)
+       return UV_EINVAL;
+     else
+-      return uv_socketpair(SOCK_STREAM, 0, fds, 0, 0);
++    {
++      /* bobliu has no socketpair: use a plain pipe. A pipe is one-way, so the
++       * container must say which way. fds[0] is our (parent) end, fds[1] the child's. */
++      int p[2], err;
++      int rd = !!(container->flags & UV_READABLE_PIPE);
++      int wr = !!(container->flags & UV_WRITABLE_PIPE);
++      if (rd == wr)
++        return UV_ENOTSUP;
++      if ((err = uv_pipe(p, 0, 0)))
++        return err;
++      if (rd) { fds[1] = p[0]; fds[0] = p[1]; }   /* child reads p[0], parent writes p[1] */
++      else    { fds[1] = p[1]; fds[0] = p[0]; }   /* child writes p[1], parent reads p[0] */
++      return 0;
++    }
+ 
+   case UV_INHERIT_FD:
+   case UV_INHERIT_STREAM:

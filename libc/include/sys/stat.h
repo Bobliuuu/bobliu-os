@@ -56,6 +56,10 @@ int mkdir(const char* path, ...);               /* the mode argument is accepted
 int chmod(const char* path, mode_t mode);       /* accepted, no effect */
 int fchmod(int fd, mode_t mode);
 mode_t umask(mode_t m);
+int utimensat(int dirfd, const char* path, const struct timespec ts[2], int flags);
+int futimens(int fd, const struct timespec ts[2]);   /* accepted, no effect: files have no stored times */
+int utimes(const char* path, const void* tv);
+int futimes(int fd, const void* tv);
 
 #ifdef __cplusplus
 }

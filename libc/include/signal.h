@@ -23,6 +23,8 @@
 #define SIGTSTP  20
 #define SIGTTIN  21
 #define SIGTTOU  22
+#define SIGPROF  27
+#define SIGSYS   31
 #define SIGWINCH 28   /* defined for portability, never delivered (fixed-size console) */
 #define NSIG 32
 

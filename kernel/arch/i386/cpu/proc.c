@@ -286,6 +286,9 @@ void proc_exit(int code) {
             w->state = PROC_RUNNABLE;
     }
 
+    if (leader->parent && leader->parent != KERNEL_PROC)      // tell the parent (ignored unless it installed a handler)
+        sig_send(leader->parent, SIGCHLD);
+
     if (p != leader) {           // a worker ended the process: it dies too, but waitpid only sees the leader
         p->is_thread = 1;
         p->parent = KERNEL_PROC;
@@ -369,7 +372,7 @@ int proc_wait(int pid, int* status, int options) {
         if (options & 1) return 0;
 
         uint32_t fl = irq_save();
-        if (sig_interrupting()) { irq_restore(fl); return -1; }
+        if (sig_interrupting()) { irq_restore(fl); return -4; }   // -EINTR: libc turns it into errno
         g_cur->chan = WAIT_CHILD;
         g_cur->state = PROC_SLEEPING;
         sched();

@@ -1,10 +1,14 @@
 #include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <kernel/syscall.h>
 
 int open(const char* path, int flags, ...) {
-    return __syscall3(SYS_open, (int)path, flags, 0);
+    int r = __syscall3(SYS_open, (int)path, flags, 0);
+    if (r < 0) errno = ((flags & O_CREAT) ? EACCES : ENOENT);   /* the kernel only says -1 */
+    return r;
 }
 
 int unlink(const char* path) {

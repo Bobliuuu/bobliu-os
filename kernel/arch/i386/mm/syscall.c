@@ -15,7 +15,7 @@
 static void fill_bob_stat(struct bob_stat* out, const vfs_stat_t* st) {
     out->size  = st->size;
     out->is_dir = st->is_dir;
-    out->mode  = st->is_dir ? 040755 : 0100644;
+    out->mode  = st->is_dir ? 040755 : st->kind == VK_FIFO ? 010600 : st->kind == VK_CHR ? 020666 : 0100644;
     out->mtime = wall_time();
     out->ino   = st->ino;
     out->nlink = 1;
@@ -148,7 +148,13 @@ static void syscall_dispatch(regs_t* r) {
         int fd = (int)r->ebx, cmd = (int)r->ecx;
         if (proc_fd_get(fd) == -1) { r->eax = (uint32_t)-1; return; }
         switch (cmd) {
-        case 3: r->eax = (g->nbmask >> fd & 1) ? 0x800 : 0; break;                    // F_GETFL
+        case 3: {                                                                     // F_GETFL: access mode, O_APPEND, O_NONBLOCK
+            int e = proc_fd_get(fd);
+            int fl = (e == FD_CONSOLE) ? O_RDWR : (vfs_fd_flags(e) & (3 | O_APPEND));
+            if (g->nbmask >> fd & 1) fl |= 0x800;
+            r->eax = (uint32_t)fl;
+            break;
+        }
         case 4:                                                                       // F_SETFL
             if (r->edx & 0x800) g->nbmask |= 1ull << fd; else g->nbmask &= ~(1ull << fd);
             r->eax = 0; break;

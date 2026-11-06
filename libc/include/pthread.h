@@ -1,5 +1,6 @@
 #ifndef _PTHREAD_H
 #define _PTHREAD_H 1
+#include <sched.h>
 
 /* a small pthread subset on top of clone/futex. threads share the whole address space, the
    fd table, cwd and heap with the process. there are no attributes, no cancellation, no TLS. */
@@ -49,6 +50,10 @@ int  pthread_mutex_destroy(pthread_mutex_t* m);
 int  pthread_cond_destroy(pthread_cond_t* c);
 struct timespec;
 int  pthread_cond_timedwait(pthread_cond_t* c, pthread_mutex_t* m, const struct timespec* abs);
+int  pthread_condattr_init(pthread_condattr_t* a);
+int  pthread_condattr_destroy(pthread_condattr_t* a);
+int  pthread_condattr_setclock(pthread_condattr_t* a, int clock);
+int  pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
 int  pthread_mutexattr_init(pthread_mutexattr_t* a);
 int  pthread_mutexattr_destroy(pthread_mutexattr_t* a);
 int  pthread_mutexattr_settype(pthread_mutexattr_t* a, int type);
@@ -71,6 +76,8 @@ int  pthread_rwlock_trywrlock(pthread_rwlock_t* l);
 int  pthread_rwlock_unlock(pthread_rwlock_t* l);
 int  pthread_detach(pthread_t t);
 
+int  pthread_getschedparam(pthread_t t, int* policy, struct sched_param* p);
+int  pthread_setschedparam(pthread_t t, int policy, const struct sched_param* p);
 int  sched_yield(void);
 
 #ifdef __cplusplus

@@ -229,6 +229,7 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
     st->size   = vn->size;
     st->is_dir = vn->is_dir ? 1 : 0;
     st->ino    = (uint32_t)(vn->fs_data ? vn->fs_data : vn);
+    st->kind   = vn->kind;
     vput(vn);
     return 0;
 }
@@ -239,7 +240,13 @@ int vfs_fstat(int fd, vfs_stat_t* st) {
     st->size   = vn->size;
     st->is_dir = vn->is_dir ? 1 : 0;
     st->ino    = (uint32_t)(vn->fs_data ? vn->fs_data : vn);
+    st->kind   = vn->kind;
     return 0;
+}
+
+int vfs_fd_flags(int fd) {
+    if (fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return -1;
+    return g_fds[fd].flags;
 }
 
 int vfs_ftruncate(int fd, uint32_t len) {

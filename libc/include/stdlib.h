@@ -43,6 +43,13 @@ int system(const char* cmd);           /* no shell to call: -1 */
 void qsort(void* base, size_t n, size_t size, int (*cmp)(const void*, const void*));
 void* bsearch(const void* key, const void* base, size_t n, size_t size, int (*cmp)(const void*, const void*));
 
+int mkstemp(char* tmpl);
+char* mkdtemp(char* tmpl);
+char* realpath(const char* path, char* resolved);
+char* ptsname(int fd);
+int posix_openpt(int flags);
+int grantpt(int fd);
+int unlockpt(int fd);
 #ifdef __cplusplus
 }
 #endif

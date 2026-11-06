@@ -7,6 +7,7 @@ extern "C" {
 #endif
 struct group* getgrgid(gid_t gid);
 struct group* getgrnam(const char* name);
+int getgrgid_r(gid_t gid, struct group* g, char* buf, size_t n, struct group** res);
 #ifdef __cplusplus
 }
 #endif

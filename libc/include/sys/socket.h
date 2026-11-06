@@ -26,6 +26,18 @@ typedef unsigned short sa_family_t;
 #define SO_RCVBUF 8
 #define SO_REUSEPORT 15
 #define SOMAXCONN 128
+#define SO_TYPE 3
+#define SO_LINGER 13
+#define SCM_RIGHTS 1
+#define MSG_TRUNC 0x20
+#define MSG_CTRUNC 8
+#define SOCK_RAW 3
+#define CMSG_ALIGN(n) (((n) + 3u) & ~3u)
+#define CMSG_DATA(c) ((unsigned char*)((struct cmsghdr*)(c) + 1))
+#define CMSG_LEN(n) (CMSG_ALIGN(sizeof(struct cmsghdr)) + (n))
+#define CMSG_SPACE(n) (CMSG_ALIGN(sizeof(struct cmsghdr)) + CMSG_ALIGN(n))
+#define CMSG_FIRSTHDR(m) ((m)->msg_controllen >= sizeof(struct cmsghdr) ? (struct cmsghdr*)(m)->msg_control : (struct cmsghdr*)0)
+#define CMSG_NXTHDR(m, c) ((struct cmsghdr*)0)
 #define SHUT_RD 0
 #define SHUT_WR 1
 #define SHUT_RDWR 2
@@ -34,6 +46,7 @@ typedef unsigned short sa_family_t;
 #define MSG_DONTWAIT 0x40
 struct sockaddr { sa_family_t sa_family; char sa_data[14]; };
 struct sockaddr_storage { sa_family_t ss_family; char __pad[126]; };
+struct linger { int l_onoff, l_linger; };
 struct msghdr { void* msg_name; socklen_t msg_namelen; struct iovec* msg_iov; int msg_iovlen; void* msg_control; socklen_t msg_controllen; int msg_flags; };
 struct cmsghdr { socklen_t cmsg_len; int cmsg_level; int cmsg_type; };
 #ifdef __cplusplus

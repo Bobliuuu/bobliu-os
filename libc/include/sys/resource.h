@@ -13,6 +13,9 @@ typedef unsigned long rlim_t;
 #define RLIMIT_AS 9
 #define RUSAGE_SELF 0
 #define RUSAGE_CHILDREN (-1)
+#define PRIO_PROCESS 0
+#define PRIO_PGRP 1
+#define PRIO_USER 2
 struct rlimit { rlim_t rlim_cur, rlim_max; };
 struct rusage { struct timeval ru_utime, ru_stime; long ru_maxrss, ru_ixrss, ru_idrss, ru_isrss, ru_minflt, ru_majflt, ru_nswap, ru_inblock, ru_oublock, ru_msgsnd, ru_msgrcv, ru_nsignals, ru_nvcsw, ru_nivcsw; };
 #ifdef __cplusplus
@@ -21,6 +24,8 @@ extern "C" {
 int getrlimit(int res, struct rlimit* rl);
 int setrlimit(int res, const struct rlimit* rl);
 int getrusage(int who, struct rusage* ru);
+int getpriority(int which, int who);
+int setpriority(int which, int who, int prio);
 #ifdef __cplusplus
 }
 #endif
