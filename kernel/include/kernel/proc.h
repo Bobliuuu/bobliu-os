@@ -40,6 +40,7 @@ typedef struct proc {
     regs_t*        tf;          // trap frame of the current syscall/irq
     uint32_t       brk;         // end of the user heap (starts at USER_HEAP_BASE)
     uint64_t       nbmask;      // bit per user fd: O_NONBLOCK (group state, inherited by fork)
+    uint64_t       cloexec;     // bit per user fd: FD_CLOEXEC (closed by execve, inherited by fork)
     int            io_nb;       // this thread: the read/write being served must not block
     int            fds[PROC_MAXFD];   // user fd -> vfs fd / FD_CONSOLE / -1; inherited by fork and exec
     uint32_t       sig_pending, sig_mask;

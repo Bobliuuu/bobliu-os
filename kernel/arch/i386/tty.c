@@ -70,6 +70,7 @@ static void cursor_sync(void) {
 
 // ANSI subset used by full screen programs (terminfo "bobliu"): cursor movement, erase,
 // insert/delete line/char, SGR colours, cursor visibility, save/restore cursor.
+static int acs_on;             // SO/SI line-drawing charset active
 static int esc_state;          // 0 plain, 1 saw ESC, 2 inside CSI
 #define ESC_MAXP 8
 static int esc_par[ESC_MAXP], esc_n, esc_priv;
@@ -201,7 +202,7 @@ void terminal_putchar(char c) {
 			esc_state = 0;
 			if (c == '7') { sv_row = (int)terminal_row; sv_col = (int)terminal_column; }
 			else if (c == '8') { terminal_row = (size_t)sv_row; terminal_column = (size_t)sv_col; wrap_pending = 0; cursor_sync(); }
-			else if (c == 'c') { sgr(0); update_color(); esc_priv = 0; esc_par[0] = 2; ansi_final('J'); terminal_row = terminal_column = 0; cursor_sync(); }
+			else if (c == 'c') { acs_on = 0; sgr(0); update_color(); esc_priv = 0; esc_par[0] = 2; ansi_final('J'); terminal_row = terminal_column = 0; cursor_sync(); }
 			// anything else (ESC =, ESC >, ESC \ ...) is a complete sequence we do not act on
 		}
 		return;
@@ -216,7 +217,23 @@ void terminal_putchar(char c) {
 	else esc_state = 0;                                          // a control byte inside a sequence aborts it
 }
 
+// SO (0x0E) / SI (0x0F) switch between the normal and the line-drawing charset, as the linux terminfo
+// entry expects. In line-drawing mode the VT100 letters q x l k m j t u v w n become CP437 box glyphs.
+static unsigned char acs_map(unsigned char c) {
+	switch (c) {
+	case 'q': return 0xC4; case 'x': return 0xB3; case 'l': return 0xDA; case 'k': return 0xBF;
+	case 'm': return 0xC0; case 'j': return 0xD9; case 't': return 0xC3; case 'u': return 0xB4;
+	case 'v': return 0xC1; case 'w': return 0xC2; case 'n': return 0xC5; case 'a': return 0xB1;
+	case '`': return 0x04; case '0': return 0xDB; case '+': return 0x1A; case ',': return 0x1B;
+	case '-': return 0x18; case '.': return 0x19; case 'h': return 0xB0; case '~': return 0xF9;
+	case 'f': return 0xF8; case 'g': return 0xF1; case 'y': return 0xF3; case 'z': return 0xF2;
+	}
+	return c;
+}
+
 static void terminal_putchar_raw(char c) {
+	if (c == 0x0E) { acs_on = 1; return; }
+	if (c == 0x0F) { acs_on = 0; return; }
 	if (c == '\n') {
 		wrap_pending = 0;
 		terminal_column = 0;
@@ -248,7 +265,7 @@ static void terminal_putchar_raw(char c) {
 		terminal_row++;
 		if (terminal_row == VGA_HEIGHT) terminal_scroll();
 	}
-	unsigned char uc = c;
+	unsigned char uc = acs_on ? acs_map((unsigned char)c) : (unsigned char)c;
 	terminal_putentryat(uc, terminal_color, terminal_column, terminal_row);
 	if (terminal_column + 1 == VGA_WIDTH) wrap_pending = 1;
 	else terminal_column++;

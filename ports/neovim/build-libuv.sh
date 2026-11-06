@@ -33,7 +33,7 @@ rm -f "$WORK/build/libuv.a"
 i686-elf-ar rcs "$WORK/build/libuv.a" "$OUT"/*.o
 echo "built $WORK/build/libuv.a"
 
-for t in uvtest uvtest2; do
+for t in uvtest uvtest2 uvtty; do
   $CC -O2 -D__GNU__ -Iinclude -o "$WORK/build/$t" "$HERE/tests/$t.c" "$WORK/build/libuv.a"
   cp "$WORK/build/$t" "$ROOT/initrd/bin/$t"      # initrd/bin is gitignored; rerun ./iso.sh to pack it
 done

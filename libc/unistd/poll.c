@@ -51,6 +51,7 @@ int fcntl(int fd, int cmd, ...) {
 int pipe2(int fds[2], int flags) {
     if (pipe(fds) < 0) return -1;
     if (flags & O_NONBLOCK) { fcntl(fds[0], F_SETFL, O_NONBLOCK); fcntl(fds[1], F_SETFL, O_NONBLOCK); }
+    if (flags & O_CLOEXEC) { fcntl(fds[0], F_SETFD, FD_CLOEXEC); fcntl(fds[1], F_SETFD, FD_CLOEXEC); }
     return 0;
 }
 

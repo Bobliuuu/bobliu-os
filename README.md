@@ -38,7 +38,7 @@ bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
 / $ echo hi | tr a-z A-Z
 HI
 / $ ls /bin | wc -l
-79
+88
 / $ lua -e "for i=1,3 do print(i, i*i, math.sqrt(i)) end"
 1       1       1
 2       4       1.4142135623731
@@ -107,10 +107,11 @@ Add a program: drop `user/myprog.c`, rerun `./iso.sh`, run `myprog`.
 ### 📚 Userland
 - 🧰 **Own libc**: stdio (`FILE`, `printf` with floats), `malloc`, string, ctype, `qsort`, `scanf` family, `setjmp`, time, **musl libm**
 - 🐚 **`sh`**: quoting, `$VAR`, globbing, `&& || ;  &`, `2>&1`, `if/for/while`, scripts, raw-mode line editor with **history and Tab completion**
-- 🛠️ **79 programs**: `ls cat grep sed sort uniq find diff xxd head tail tr cut xargs more expr test printf ...`
+- 🛠️ **88 programs**: `ls cat grep sed sort uniq find diff xxd head tail tr cut xargs more expr test printf ...`
 - ✏️ **`vi`**: normal / insert / `:` modes
 - 🌈 **`kilo`**: antirez's tiny editor ported unmodified except for 2 lines, with C/Lua-style syntax highlighting, search, Ctrl-S save
 - 🌙 **Lua 5.1** interpreter
+- 🦄 **neovim 0.10.4**: the real editor, cross-built from source with libuv, luv, msgpack, tree-sitter and libvterm. Full-screen TUI, insert/normal/command modes, `:wq`. Slow to start under QEMU (about a minute and a half)
 - 👹 **Doom** (doomgeneric + Freedoom), ~60 fps under QEMU
 
 ## 🏗️ Architecture
@@ -247,6 +248,10 @@ docs/               architecture.md, screenshots
 
 <p align="center"><img src="docs/img/kilo.png" width="640" alt="kilo editing C on bobliu"></p>
 
+<p align="center"><img src="docs/img/neovim.png" width="640" alt="neovim 0.10.4 in insert mode on bobliu"></p>
+
+*Neovim 0.10.4 itself, built from source for bobliu, in insert mode.*
+
 ## 🎬 Demo script
 
 A 3 minute tour that shows off the whole stack:
@@ -272,7 +277,10 @@ cat /tmp/t.c
 # 6. an interpreter running on top of it all
 lua -e "for i=1,5 do print(i, i*i, math.sqrt(i)) end"
 
-# 7. the finale
+# 7. the real neovim (starts in about 90 s under QEMU; i to insert, Esc, :wq)
+nvim /tmp/hello.txt
+
+# 8. the finale
 doom -warp 1 1 -skill 2
 ```
 
@@ -291,6 +299,7 @@ Run any of these inside bobliu; each prints its own pass/fail lines.
 | `pipetest` `sigtest` `threadtest` `timetest` `polltest` | pipes, signals, threads, time, poll |
 | `stdiotest` `floattest` `envtest` `ttytest` | libc stdio, floats and libm, environment, termios |
 | `crash` | bad syscall args and NULL writes kill only the offender |
+| `posixtest` `uvtest` `uvtest2` `uvtty` `depstest` | the POSIX layer (35 checks), libuv timers/pipes/threads/fs, libuv spawn and tty, libuv tty input, and the neovim dependencies (msgpack, unibilium, libvterm, lpeg, luv, tree-sitter) |
 
 ## 🗺️ Roadmap
 
@@ -302,10 +311,10 @@ Mapped to the OSDev phases. Status reflects what is in the tree.
 | II | Ring 3, ELF loader, syscalls, toolchain, libc, fork/exec, shell, file syscalls | ✅ |
 | II | COW fork, stack guards, `brk`/`malloc`, writable `/tmp`, ATA disk | ✅ |
 | II+ | cwd, pipes, signals, **bobfs**, tab completion, `vi` | ✅ |
-| III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 79 programs | ✅ |
+| III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 88 programs | ✅ |
 | III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
 | III | **kilo** editor with syntax highlighting | ✅ |
-| III | **neovim** port | 🚧 in progress, plan in [docs/neovim-port.md](docs/neovim-port.md). POSIX layer, libuv and all pure-C dependencies generated sources, cross-build, boot and headless editing done (milestones 1-6 of 7). `nvim --headless` edits and saves files on bobliu; the full-screen TUI does not stay up yet |
+| III | **neovim** port | ✅ runs (see [docs/neovim-port.md](docs/neovim-port.md)): `nvim` starts its TUI, edits and saves files. Limits: 8-colour terminal, no tree-sitter parsers loaded, no RPC socket, slow startup |
 | IV | Networking, sound, USB, GUI | 💭 not started |
 
 ## ⚠️ Known limitations

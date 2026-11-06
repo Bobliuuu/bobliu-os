@@ -947,7 +947,7 @@ int main(int argc, char** argv) {
     if (!getenv("HOME")) setenv("HOME", "/tmp", 1);          /* "/" is read-only, programs want a writable home */
     if (!getenv("NVIM_LOG_FILE")) setenv("NVIM_LOG_FILE", "/tmp/nvim.log", 1);
     if (!getenv("USER")) setenv("USER", "root", 1);
-    if (!getenv("TERM")) setenv("TERM", "bobliu", 1);
+    if (!getenv("TERM")) setenv("TERM", "linux", 1);       /* the VGA terminal speaks a linux-console subset; neovim has that terminfo built in */
     for (char** e = environ; e && *e; e++) {
         char* eq = strchr(*e, '=');
         char name[32];

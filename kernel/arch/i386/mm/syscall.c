@@ -158,13 +158,15 @@ static void syscall_dispatch(regs_t* r) {
         case 4:                                                                       // F_SETFL
             if (r->edx & 0x800) g->nbmask |= 1ull << fd; else g->nbmask &= ~(1ull << fd);
             r->eax = 0; break;
-        case 1: case 2: r->eax = 0; break;                                            // F_GETFD / F_SETFD
-        case 0: {                                                                     // F_DUPFD (min fd in edx)
+        case 1: r->eax = (g->cloexec >> fd & 1) ? 1 : 0; break;                       // F_GETFD: FD_CLOEXEC
+        case 2: if (r->edx & 1) g->cloexec |= 1ull << fd; else g->cloexec &= ~(1ull << fd); r->eax = 0; break;   // F_SETFD
+        case 0: case 1030: {                                                          // F_DUPFD / F_DUPFD_CLOEXEC (min fd in edx; close-on-exec is not tracked)
             int e = proc_fd_get(fd), nfd = -1;
             for (int i = (int)r->edx; i < PROC_MAXFD; i++) if (g->fds[i] == -1) { nfd = i; break; }
             if (nfd < 0) { r->eax = (uint32_t)-1; break; }
             if (e >= 0) vfs_dup(e);
             g->fds[nfd] = e; g->nbmask &= ~(1ull << nfd);
+            if (cmd == 1030) g->cloexec |= 1ull << nfd; else g->cloexec &= ~(1ull << nfd);
             r->eax = (uint32_t)nfd; break;
         }
         default: r->eax = (uint32_t)-1;
@@ -209,6 +211,7 @@ static void syscall_dispatch(regs_t* r) {
         if (vfd < 0) { r->eax = (uint32_t)-1; return; }
         int ufd = proc_fd_alloc(vfd);
         if (ufd < 0) vfs_close(vfd);
+        else if (r->ecx & 0x80000) proc_current()->group->cloexec |= 1ull << ufd;   // O_CLOEXEC
         r->eax = (uint32_t)ufd;
         return;
     }

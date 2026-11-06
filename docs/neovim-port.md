@@ -45,7 +45,7 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 | 4 | Host codegen | **Done.** `gen-nvim-sources.sh` produces 363 generated headers on the host, 0 failures |
 | 5 | Cross-build `nvim` | **Done.** 186 neovim sources compile and link into a 4.8 MB `nvim` against bobliu's libc |
 | 6 | `nvim --version`, then `nvim --headless -c 'q'` | **Done.** Both run under QEMU; `--headless -c q` exits 0 with no messages |
-| 7 | Interactive editing | **Partly done.** Headless editing works (insert text, `:write`, `:q`, file contents verified). The full-screen TUI starts and exits immediately, see notes |
+| 7 | Interactive editing | **Done.** The TUI starts, inserts text, leaves insert mode and runs `:wq`; `cat` shows the saved file. Syntax highlighting is partial (see below) |
 
 ## Risks
 
@@ -118,4 +118,23 @@ What it took beyond milestone 5:
 
 Remaining warnings in a headless run are harmless: no server socket (`address family not supported`, so no RPC over a socket), and `tempdir root has invalid permissions` because bobliu has no permission bits (nvim falls back to `/tmp/XXXXXX`).
 
-Not working: the full-screen TUI. `nvim file` clears the screen and returns to the shell within seconds, with nothing in `/tmp/nvim.log`. The TUI client normally spawns `nvim --embed` as a child and talks to it over pipes, so the next step is to find out whether the spawn, the pipe protocol or the terminal setup is what fails.
+What fixed the TUI (it had been exiting at once):
+
+- `fcntl(fd, F_DUPFD_CLOEXEC, n)` was unknown to the kernel and returned -1; neovim's `--embed` child hit an assertion in `event/stream.c`. The kernel now handles it.
+- `FD_CLOEXEC` was a no-op. libuv's `uv_spawn` waits for an exec-status pipe to close on `exec`, so it only returned when the child exited, which hung the TUI waiting for a server that was already running. The kernel now tracks a per-process close-on-exec mask (`F_SETFD`, `O_CLOEXEC`, `pipe2`, `F_DUPFD_CLOEXEC`) and `execve` closes those fds.
+- The linux terminfo uses SO/SI (`0x0E`/`0x0F`) to switch charsets; the VGA font drew those bytes as `*`-like glyphs all over the screen. The terminal now treats them as charset switches, with a line-drawing map for box characters.
+- `sh` defaults `TERM` to `linux` (neovim has that terminfo built in); `bobliu` had no terminfo entry.
+
+## What works and what does not
+
+Verified under QEMU: starting the TUI, insert mode, `Esc`, `:wq`, the saved file's contents, `nvim --version`, `nvim --headless` editing, C filetype detection (statements render bold).
+
+Limits, all expected:
+
+- Startup takes about 90 seconds under QEMU's software emulation because the embedded Lua runtime is parsed from source (no bytecode) and the editor spawns a second `nvim --embed` process. Keys sent faster than the emulated CPU can handle can be merged (for example `Esc` followed at once by `:` becomes Alt-`:`), so pace input when scripting.
+- Colours: the console advertises 8 colours, so most highlight groups look plain. `int` and comments are not coloured, `return` is bold.
+- The bundled tree-sitter parsers are linked in but neovim looks for them with `dlopen`, so none are registered. Vim-style syntax scripts work; tree-sitter highlighting does not.
+- No server socket (`address family not supported`), so `--listen` and RPC over a socket are unavailable. The embedded UI channel uses pipes and works.
+- Anything in neovim's runtime that needs LuaJIT's `ffi` or `jit` modules fails, because the Lua here is plain 5.1.
+- The runtime is a 3.3 MB subset (Lua modules, filetype detection, a few syntax scripts); help files, spell files, the other ~700 syntax scripts and `ftplugin`/`indent` are not staged.
+- `Ctrl-C` kills every user process that does not ignore it, including neovim's server, since bobliu has no process groups.

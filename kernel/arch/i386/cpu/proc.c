@@ -78,6 +78,7 @@ static proc_t* proc_alloc(int thread) {
                     if (p->fds[f] >= 0) vfs_dup(p->fds[f]);
                 }
                 p->nbmask = src->nbmask;
+                p->cloexec = src->cloexec;
                 strcpy(p->cwd, src->cwd);
                 memcpy(p->sig_handler, src->sig_handler, sizeof(p->sig_handler));
                 p->sig_restorer = src->sig_restorer;
@@ -231,6 +232,8 @@ int proc_exec(const char* path, char** argv, int argc, char** envp, int envc, re
     p->pd = npd;
     p->brk = USER_HEAP_BASE;
     sig_exec_reset(p);
+    for (int i = 0; i < PROC_MAXFD; i++)                 // FD_CLOEXEC descriptors do not survive exec
+        if (p->group->cloexec >> i & 1) proc_fd_close(i);
     paging_load(npd);
     paging_free_user(old, 1);
 
@@ -417,7 +420,7 @@ int proc_fd_get(int ufd) {
 // lowest free user fd holding `entry`, or -1
 int proc_fd_alloc(int entry) {
     for (int i = 0; i < PROC_MAXFD; i++) {
-        if (g_cur->group->fds[i] == -1) { g_cur->group->fds[i] = entry; return i; }
+        if (g_cur->group->fds[i] == -1) { g_cur->group->fds[i] = entry; g_cur->group->cloexec &= ~(1ull << i); return i; }
     }
     return -1;
 }
@@ -428,6 +431,7 @@ int proc_fd_close(int ufd) {
     if (g->fds[ufd] >= 0) vfs_close(g->fds[ufd]);
     g->fds[ufd] = -1;
     g->nbmask &= ~(1ull << ufd);
+    g->cloexec &= ~(1ull << ufd);
     return 0;
 }
 
@@ -446,6 +450,7 @@ int proc_fd_dup(int ofd, int nfd) {
     if (e >= 0) vfs_dup(e);
     g_cur->group->fds[nfd] = e;
     g_cur->group->nbmask &= ~(1ull << nfd);
+    g_cur->group->cloexec &= ~(1ull << nfd);
     return nfd;
 }
 
