@@ -194,7 +194,7 @@ sequenceDiagram
     K->>K: mount initrd on /, ramfs on /tmp, bobfs on /disk
     K->>P: proc_spawn("/bin/sh") from init= cmdline
     P->>P: fork + execve + waitpid loop
-    Note over K,P: pid 0 sleeps in waitpid; on exit, kernel shell starts
+    Note over K,P: pid 0 sleeps in waitpid, then the kernel shell starts when init exits
 ```
 
 ### 🗺️ Virtual address space
