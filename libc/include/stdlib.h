@@ -43,6 +43,9 @@ int system(const char* cmd);           /* no shell to call: -1 */
 void qsort(void* base, size_t n, size_t size, int (*cmp)(const void*, const void*));
 void* bsearch(const void* key, const void* base, size_t n, size_t size, int (*cmp)(const void*, const void*));
 
+long long llabs(long long x);
+long long strtoll(const char* s, char** end, int base);
+unsigned long long strtoull(const char* s, char** end, int base);
 int mkstemp(char* tmpl);
 char* mkdtemp(char* tmpl);
 char* realpath(const char* path, char* resolved);

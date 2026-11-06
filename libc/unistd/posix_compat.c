@@ -23,6 +23,9 @@
 #include <sys/utsname.h>
 #include <netdb.h>
 #include <wchar.h>
+#include <iconv.h>
+#include <inttypes.h>
+#include <pty.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <dlfcn.h>
@@ -646,3 +649,68 @@ struct servent* getservbyname(const char* n, const char* p) { (void)n; (void)p; 
 struct hostent* gethostbyname(const char* n) { (void)n; return 0; }
 size_t wcslen(const wchar_t* s) { size_t n = 0; while (s[n]) n++; return n; }
 size_t strnlen(const char* s, size_t n) { size_t i = 0; while (i < n && s[i]) i++; return i; }
+
+iconv_t iconv_open(const char* to, const char* from) { (void)to; (void)from; errno = EINVAL; return (iconv_t)-1; }
+size_t iconv(iconv_t cd, char** in, size_t* il, char** out, size_t* ol) { (void)cd; (void)in; (void)il; (void)out; (void)ol; errno = EBADF; return (size_t)-1; }
+int iconv_close(iconv_t cd) { (void)cd; return 0; }
+int openpty(int* m, int* s, char* n, const struct termios* t, const struct winsize* w) { (void)m; (void)s; (void)n; (void)t; (void)w; NOSYS(int); }
+int forkpty(int* m, char* n, const struct termios* t, const struct winsize* w) { (void)m; (void)n; (void)t; (void)w; NOSYS(int); }
+
+static int digit_val(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+    return 99;
+}
+/* shared by strtoll/strtoull: parses magnitude, reports overflow and sign */
+static unsigned long long parse_ull(const char* s, char** end, int base, int* neg, int* ovf) {
+    const char* p = s;
+    unsigned long long v = 0;
+    *neg = 0; *ovf = 0;
+    while (*p == ' ' || (*p >= '\t' && *p <= '\r')) p++;
+    if (*p == '-') { *neg = 1; p++; } else if (*p == '+') p++;
+    if ((base == 0 || base == 16) && p[0] == '0' && (p[1] == 'x' || p[1] == 'X') && digit_val(p[2]) < 16) { p += 2; base = 16; }
+    else if (base == 0) base = p[0] == '0' ? 8 : 10;
+    const char* start = p;
+    for (; digit_val(*p) < base; p++) {
+        unsigned d = (unsigned)digit_val(*p);
+        if (v > (0xFFFFFFFFFFFFFFFFull - d) / (unsigned)base) *ovf = 1;
+        else v = v * (unsigned)base + d;
+    }
+    if (p == start) { if (end) *end = (char*)s; return 0; }
+    if (end) *end = (char*)p;
+    return v;
+}
+long long strtoll(const char* s, char** end, int base) {
+    int neg, ovf;
+    unsigned long long v = parse_ull(s, end, base, &neg, &ovf);
+    if (ovf || (!neg && v > 0x7FFFFFFFFFFFFFFFull) || (neg && v > 0x8000000000000000ull)) {
+        errno = ERANGE;
+        return neg ? (-0x7FFFFFFFFFFFFFFFll - 1) : 0x7FFFFFFFFFFFFFFFll;
+    }
+    return neg ? (long long)(0 - v) : (long long)v;
+}
+unsigned long long strtoull(const char* s, char** end, int base) {
+    int neg, ovf;
+    unsigned long long v = parse_ull(s, end, base, &neg, &ovf);
+    if (ovf) { errno = ERANGE; return 0xFFFFFFFFFFFFFFFFull; }
+    return neg ? 0 - v : v;
+}
+intmax_t strtoimax(const char* s, char** end, int base) { return strtoll(s, end, base); }
+uintmax_t strtoumax(const char* s, char** end, int base) { return strtoull(s, end, base); }
+long long llabs(long long x) { return x < 0 ? -x : x; }
+char* strtok_r(char* s, const char* delim, char** save) {
+    if (!s) s = *save;
+    s += strspn(s, delim);
+    if (!*s) { *save = s; return 0; }
+    char* tok = s;
+    s += strcspn(s, delim);
+    if (*s) *s++ = 0;
+    *save = s;
+    return tok;
+}
+void tzset(void) {}
+static int g_pwent;
+struct passwd* getpwent(void) { return g_pwent++ == 0 ? &g_pw : 0; }
+void setpwent(void) { g_pwent = 0; }
+void endpwent(void) { g_pwent = 0; }

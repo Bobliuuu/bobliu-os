@@ -7,6 +7,7 @@ typedef unsigned int tcflag_t;
 typedef unsigned char cc_t;
 typedef unsigned int speed_t;
 #define NCCS 32
+#define _POSIX_VDISABLE 0
 struct termios {
     tcflag_t c_iflag, c_oflag, c_cflag, c_lflag;
     cc_t c_cc[NCCS];
@@ -48,6 +49,12 @@ struct termios {
 #define VEOF 4
 #define VTIME 5
 #define VMIN 6
+#define VEOL 11
+#define VEOL2 16
+#define VWERASE 14
+#define VREPRINT 12
+#define VLNEXT 15
+#define VDISCARD 13
 #define VSTART 8
 #define VSTOP 9
 #define VSUSP 10

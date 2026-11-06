@@ -7,6 +7,9 @@ extern "C" {
 #endif
 struct passwd* getpwuid(uid_t uid);
 struct passwd* getpwnam(const char* name);
+struct passwd* getpwent(void);
+void setpwent(void);
+void endpwent(void);
 int getpwuid_r(uid_t uid, struct passwd* pw, char* buf, size_t n, struct passwd** res);
 int getpwnam_r(const char* name, struct passwd* pw, char* buf, size_t n, struct passwd** res);
 #ifdef __cplusplus

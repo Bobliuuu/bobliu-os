@@ -43,7 +43,7 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 | 2 | libuv builds and runs | **Done.** `uvtest` (timers, pipes, thread async wakeup, threadpool fs) and `uvtest2` (spawn with a piped child, exit callback, tty init/winsize/raw mode) pass under QEMU |
 | 3 | Pure-C deps (msgpack, unibilium, libvterm, tree-sitter + 6 parsers, lpeg, luv) | **Done.** `depstest` passes 12/12 under QEMU |
 | 4 | Host codegen | **Done.** `gen-nvim-sources.sh` produces 363 generated headers on the host, 0 failures |
-| 5 | Cross-build `nvim` | `nvim` binary links against the bobliu libc |
+| 5 | Cross-build `nvim` | **Done.** 186 neovim sources compile and link into a 4.8 MB `nvim` against bobliu's libc |
 | 6 | `nvim --version`, then `nvim --headless -c 'q'` | Exits 0 under QEMU |
 | 7 | Interactive editing | Edit, `:w`, `:q`, syntax highlighting with a built-in runtime |
 
@@ -93,3 +93,11 @@ Known gaps: `FD_CLOEXEC` is recorded nowhere (`F_SETFD` is a no-op), so `uv_spaw
 - `COMPILE_LUA=OFF`: the embedded Lua runtime is stored as source text, since the generator's LuaJIT bytecode is not loadable by bobliu's Lua 5.1.
 - The generated prototype headers come from running the host C preprocessor over neovim's own sources, so they describe neovim's functions only. `config.h` is the part that depends on the target, and milestone 5 writes that by hand for bobliu.
 - Neovim's bundled LuaJIT fails to build on this Mac (an arm64 link error), which is why the host build uses Homebrew's.
+
+## Milestone 5 notes
+
+`ports/neovim/build-nvim.sh` compiles the 186 C files in `ports/neovim/nvim-sources.txt` (the exact set neovim's own cmake build uses for `nvim_bin`, taken from `ninja -t commands`) with `i686-bobliu-gcc` and links them with the dependency archives. `ports/neovim/nvim-config/auto/` holds the hand-written `config.h`, `pathdef.h` and `versiondef.h` (32-bit, no gettext, no xattr, no forkpty).
+
+What the compile found missing in libc, all now added: `intmax_t` and the `PRI*` macros, `iconv.h` (every conversion fails), `pty.h` (fails with ENOSYS), `strtoll`/`strtoull`/`strtoimax`, `llabs`, `strtok_r`, `tzset`, `getpwent`, `fpclassify` and `FP_*`, more `termios` control characters, `O_NOFOLLOW`, `F_DUPFD_CLOEXEC`, `S_IREAD`/`S_IWRITE`, `luv/luv.h`.
+
+Not done yet: the tree-sitter parsers are linked statically, but neovim loads parsers with `dlopen`, so none are registered. That is a patch for later.

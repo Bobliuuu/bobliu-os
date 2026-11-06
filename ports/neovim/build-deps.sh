@@ -70,7 +70,7 @@ lib lpeg "-I$LUAINC" lpcap.c lpcode.c lpcset.c lpprint.c lptree.c lpvm.c
 
 cd "$SRC/luv"
 lib luv "-I$LUAINC -I$LIBUVINC -Ideps/lua-compat-5.3/c-api -Isrc -D_GNU_SOURCE -D__GNU__ -DLUV_USE_COMPAT=1" src/luv.c deps/lua-compat-5.3/c-api/compat-5.3.c
-cp src/luv.h "$PREFIX/include/" 2>/dev/null || true
+mkdir -p "$PREFIX/include/luv" && cp src/*.h "$PREFIX/include/luv/"
 
 cd "$SRC/tree-sitter"
 cp lib/include/tree_sitter/api.h "$PREFIX/include/tree_sitter.api.h"

@@ -20,6 +20,12 @@
 #define INFINITY   (__builtin_inff())
 #define NAN        (__builtin_nanf(""))
 
+#define FP_NAN 0
+#define FP_INFINITE 1
+#define FP_ZERO 2
+#define FP_SUBNORMAL 3
+#define FP_NORMAL 4
+#define fpclassify(x) __builtin_fpclassify(FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x)
 #define isnan(x)    __builtin_isnan(x)
 #define isinf(x)    __builtin_isinf(x)
 #define isfinite(x) __builtin_isfinite(x)

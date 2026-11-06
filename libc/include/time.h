@@ -36,6 +36,7 @@ struct tm* localtime_r(const time_t* t, struct tm* out);
 time_t mktime(struct tm* tm);                   /* normalises tm, utc */
 size_t strftime(char* s, size_t max, const char* fmt, const struct tm* tm);   /* %a %A %b %B %c %d %H %I %j %m %M %p %S %U %w %x %X %y %Y %Z %% %e %F %T %s %n %t */
 double difftime(time_t a, time_t b);
+void tzset(void);                               /* no time zones: nothing to do */
 clock_t clock(void);                            /* ms since boot */
 char* asctime(const struct tm* tm);
 char* ctime(const time_t* t);

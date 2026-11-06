@@ -1,0 +1,2 @@
+#define NVIM_VERSION_MEDIUM "v0.10.4"
+#define NVIM_VERSION_BUILD "v0.10.4"

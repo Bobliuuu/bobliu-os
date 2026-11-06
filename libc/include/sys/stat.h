@@ -22,6 +22,9 @@ struct stat {
 #define S_IFDIR  0040000
 #define S_IFCHR  0020000
 #define S_IFIFO  0010000
+#define S_IREAD S_IRUSR
+#define S_IWRITE S_IWUSR
+#define S_IEXEC S_IXUSR
 #define S_ISUID 04000
 #define S_ISGID 02000
 #define S_ISVTX 01000
