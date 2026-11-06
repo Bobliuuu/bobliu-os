@@ -305,7 +305,7 @@ Mapped to the OSDev phases. Status reflects what is in the tree.
 | III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 79 programs | ✅ |
 | III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
 | III | **kilo** editor with syntax highlighting | ✅ |
-| III | **neovim** port | 🚧 in progress, plan in [docs/neovim-port.md](docs/neovim-port.md). POSIX layer, libuv and all pure-C dependencies done (milestones 1-3 of 7). Next: neovim's generated sources and the cross-build |
+| III | **neovim** port | 🚧 in progress, plan in [docs/neovim-port.md](docs/neovim-port.md). POSIX layer, libuv and all pure-C dependencies and generated sources done (milestones 1-4 of 7). Next: the cross-build of `nvim` itself |
 | IV | Networking, sound, USB, GUI | 💭 not started |
 
 ## ⚠️ Known limitations

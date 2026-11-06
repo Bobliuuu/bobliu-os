@@ -42,7 +42,7 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 | 1 | libc headers and kernel syscalls above | **Done.** `posixtest` passes 35/35 under QEMU; existing tests unchanged |
 | 2 | libuv builds and runs | **Done.** `uvtest` (timers, pipes, thread async wakeup, threadpool fs) and `uvtest2` (spawn with a piped child, exit callback, tty init/winsize/raw mode) pass under QEMU |
 | 3 | Pure-C deps (msgpack, unibilium, libvterm, tree-sitter + 6 parsers, lpeg, luv) | **Done.** `depstest` passes 12/12 under QEMU |
-| 4 | Host codegen | Neovim's generated sources are produced on the host with host `luajit` and cmake |
+| 4 | Host codegen | **Done.** `gen-nvim-sources.sh` produces 363 generated headers on the host, 0 failures |
 | 5 | Cross-build `nvim` | `nvim` binary links against the bobliu libc |
 | 6 | `nvim --version`, then `nvim --headless -c 'q'` | Exits 0 under QEMU |
 | 7 | Interactive editing | Edit, `:w`, `:q`, syntax highlighting with a built-in runtime |
@@ -85,3 +85,11 @@ Known gaps: `FD_CLOEXEC` is recorded nowhere (`F_SETFD` is a no-op), so `uv_spaw
 - neovim vendors `bit`, cjson, klib, mpack, termkey, xdiff and Unicode tables itself, so those are built with neovim in milestone 5.
 - libc gained `strnlen`, `wchar.h`, `getprotobyname` (always NULL) and the missing `AI_*`, `SIZE_MAX` constants.
 - The vimdoc parser reports a missing `<` on any non-empty text. A native build of the same parser does the same, so `depstest` checks vimdoc loosely.
+
+## Milestone 4 notes
+
+`ports/neovim/gen-nvim-sources.sh` clones neovim v0.10.4, builds msgpack-c and libvterm from neovim's own bundled recipes, configures the host build against Homebrew's LuaJIT, libuv, luv, lpeg, unibilium and tree-sitter, and runs `ninja generated-sources`. The result is 363 `*.generated.h` files (function prototypes, the API dispatch tables, the embedded Lua runtime, Unicode tables, option and event tables) under `neovim/build/{include,src/nvim/auto}`.
+
+- `COMPILE_LUA=OFF`: the embedded Lua runtime is stored as source text, since the generator's LuaJIT bytecode is not loadable by bobliu's Lua 5.1.
+- The generated prototype headers come from running the host C preprocessor over neovim's own sources, so they describe neovim's functions only. `config.h` is the part that depends on the target, and milestone 5 writes that by hand for bobliu.
+- Neovim's bundled LuaJIT fails to build on this Mac (an arm64 link error), which is why the host build uses Homebrew's.
