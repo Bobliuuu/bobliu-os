@@ -8,6 +8,7 @@
 #define SIGSEGV  11
 #define SIGUSR2  12
 #define SIGTERM  15
+#define SIGWINCH 28   /* defined for portability, never delivered (fixed-size console) */
 
 typedef void (*sighandler_t)(int);
 #define SIG_DFL ((sighandler_t)0)

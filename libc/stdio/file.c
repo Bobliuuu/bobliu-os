@@ -195,6 +195,32 @@ int ungetc(int c, FILE* f) {
     return c;
 }
 
+int getline(char** lineptr, size_t* n, FILE* f) {
+    if (!lineptr || !n) return -1;
+    if (!*lineptr || *n == 0) {
+        *n = 128;
+        *lineptr = malloc(*n);
+        if (!*lineptr) return -1;
+    }
+    size_t len = 0;
+    for (;;) {
+        int c = fgetc(f);
+        if (c == EOF) break;
+        if (len + 2 > *n) {
+            size_t nn = *n * 2;
+            char* p = realloc(*lineptr, nn);
+            if (!p) return -1;
+            *lineptr = p;
+            *n = nn;
+        }
+        (*lineptr)[len++] = (char)c;
+        if (c == '\n') break;
+    }
+    if (len == 0) return -1;
+    (*lineptr)[len] = 0;
+    return (int)len;
+}
+
 char* fgets(char* s, int n, FILE* f) {
     int i = 0;
     while (i < n - 1) {

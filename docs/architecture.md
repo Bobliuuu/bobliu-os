@@ -696,3 +696,7 @@ op are always ready. Pipes report `POLLIN` (data, or EOF with `POLLHUP`), `POLLO
 the console reports `POLLIN` when input is queued. A sleeping poll waits on `WAIT_POLL`, which pipe/console events wake
 immediately and the timer tick wakes every 10 ms to check its deadline. `select`, `pipe2`, `gettimeofday` are libc
 wrappers. `PROC_MAXFD` is now 64 and the global open-file table 256. `user/polltest.c` covers all of it.
+
+## kilo and libc additions
+
+`third_party/kilo/kilo.c` is antirez's kilo, built by `iso.sh` into `/bin/kilo`. Two changes: `editorSave` opens with `O_TRUNC` instead of calling `ftruncate` (no such syscall yet). libc gained `STDIN_FILENO`/`STDOUT_FILENO`/`STDERR_FILENO`, a variadic `open` (the mode argument is ignored), `getline`, and a `SIGWINCH` number (28, never delivered since the console size is fixed). Real neovim is not ported: libuv needs sockets, `mmap`, `sigaction` and an epoll-style API that the kernel does not provide.

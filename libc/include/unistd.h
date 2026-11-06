@@ -8,7 +8,10 @@ extern "C" {
 #endif
 
 int write(int fd, const void* buf, size_t count);
-int open(const char* path, int flags);
+#define STDIN_FILENO 0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+int open(const char* path, int flags, ...);   /* mode argument is accepted and ignored */
 int close(int fd);
 int chdir(const char* path);
 char* getcwd(char* buf, size_t size);

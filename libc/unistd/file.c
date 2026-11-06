@@ -3,7 +3,7 @@
 #include <dirent.h>
 #include <kernel/syscall.h>
 
-int open(const char* path, int flags) {
+int open(const char* path, int flags, ...) {
     return __syscall3(SYS_open, (int)path, flags, 0);
 }
 

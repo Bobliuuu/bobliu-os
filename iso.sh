@@ -9,6 +9,8 @@ for src in user/*.c; do
   prog=$(basename $src .c)
   ./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/$prog $src
 done
+# vendored third-party programs
+./toolchain/i686-bobliu-gcc -O2 -o initrd/bin/kilo third_party/kilo/kilo.c
 
 # doom (doomgeneric port); the iwad is picked up from doom/wad/
 ./doom/build.sh

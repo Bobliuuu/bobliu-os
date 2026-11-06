@@ -38,7 +38,7 @@ bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
 / $ echo hi | tr a-z A-Z
 HI
 / $ ls /bin | wc -l
-78
+79
 / $ lua -e "for i=1,3 do print(i, i*i, math.sqrt(i)) end"
 1       1       1
 2       4       1.4142135623731
@@ -107,8 +107,9 @@ Add a program: drop `user/myprog.c`, rerun `./iso.sh`, run `myprog`.
 ### 📚 Userland
 - 🧰 **Own libc**: stdio (`FILE`, `printf` with floats), `malloc`, string, ctype, `qsort`, `scanf` family, `setjmp`, time, **musl libm**
 - 🐚 **`sh`**: quoting, `$VAR`, globbing, `&& || ;  &`, `2>&1`, `if/for/while`, scripts, raw-mode line editor with **history and Tab completion**
-- 🛠️ **78 programs**: `ls cat grep sed sort uniq find diff xxd head tail tr cut xargs more expr test printf ...`
+- 🛠️ **79 programs**: `ls cat grep sed sort uniq find diff xxd head tail tr cut xargs more expr test printf ...`
 - ✏️ **`vi`**: normal / insert / `:` modes
+- 🌈 **`kilo`**: antirez's tiny editor ported unmodified except for 2 lines, with C/Lua-style syntax highlighting, search, Ctrl-S save
 - 🌙 **Lua 5.1** interpreter
 - 👹 **Doom** (doomgeneric + Freedoom), ~60 fps under QEMU
 
@@ -237,11 +238,14 @@ kernel/arch/i386/   boot.S swtch.S isr_stubs.S linker.ld
                     shell/ (kernel shell)  interrupts/  tss/
 kernel/kernel/      kernel.c (kernel_main)
 libc/               libk.a (kernel) and libc.a (user) + headers, musl libm
+third_party/        vendored kilo editor
 user/               sh, coreutils, vi, test programs (built into initrd/bin)
 doom/  lua/         vendored doomgeneric (+ platform layer) and Lua 5.1
 toolchain/          crt0.S, user.ld, i686-bobliu-gcc wrapper
 docs/               architecture.md, screenshots
 ```
+
+<p align="center"><img src="docs/img/kilo.png" width="640" alt="kilo editing C on bobliu"></p>
 
 ## 🎬 Demo script
 
@@ -261,10 +265,14 @@ for f in a b c ; do echo $f > /tmp/$f ; done ; cat /tmp/a /tmp/b /tmp/c
 # 4. persistent filesystem (kernel shell: run `mkfs` once, then reboot)
 echo persisted > /disk/note ; cat /disk/note
 
-# 5. an interpreter running on top of it all
+# 5. edit code with syntax highlighting, save, quit, read it back
+kilo /tmp/t.c      # Ctrl-S save, Ctrl-Q quit
+cat /tmp/t.c
+
+# 6. an interpreter running on top of it all
 lua -e "for i=1,5 do print(i, i*i, math.sqrt(i)) end"
 
-# 6. the finale
+# 7. the finale
 doom -warp 1 1 -skill 2
 ```
 
@@ -294,9 +302,10 @@ Mapped to the OSDev phases. Status reflects what is in the tree.
 | II | Ring 3, ELF loader, syscalls, toolchain, libc, fork/exec, shell, file syscalls | ✅ |
 | II | COW fork, stack guards, `brk`/`malloc`, writable `/tmp`, ATA disk | ✅ |
 | II+ | cwd, pipes, signals, **bobfs**, tab completion, `vi` | ✅ |
-| III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 78 programs | ✅ |
+| III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 79 programs | ✅ |
 | III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
-| III | **neovim** port | 🚧 lua, env, tty, poll done; libuv next |
+| III | **kilo** editor with syntax highlighting | ✅ |
+| III | **neovim** port | 💭 stretch goal: Lua, env, tty and poll are done, but it still needs sockets, `mmap`, `sigaction` and an epoll-style API for libuv |
 | IV | Networking, sound, USB, GUI | 💭 not started |
 
 ## ⚠️ Known limitations
@@ -311,12 +320,13 @@ Honest list; details in [docs/architecture.md](docs/architecture.md#11-known-lim
 
 ## 📄 License
 
-bobliu's own code is [MIT](LICENSE). Vendored code keeps its own license: doomgeneric (`doom/LICENSE`), Freedoom (`doom/wad/COPYING.txt`), Lua (`lua/LICENSE`).
+bobliu's own code is [MIT](LICENSE). Vendored code keeps its own license: doomgeneric (`doom/LICENSE`), Freedoom (`doom/wad/COPYING.txt`), Lua (`lua/LICENSE`), kilo (`third_party/kilo/LICENSE`, BSD-2).
 
 ## 🙏 Credits
 
 - 📖 [OSDev wiki](https://wiki.osdev.org/) and its Meaty Skeleton
 - 👹 [doomgeneric](https://github.com/ozkl/doomgeneric) and [Freedoom](https://freedoom.github.io/) (BSD licensed IWAD, see `doom/wad/COPYING.txt`)
+- 🌈 [kilo](https://github.com/antirez/kilo) by antirez
 - 🌙 [Lua 5.1](https://www.lua.org/) (MIT) and [musl libm](https://musl.libc.org/)
 
 <div align="center">
