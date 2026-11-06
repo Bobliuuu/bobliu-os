@@ -11,7 +11,7 @@ int unlink(const char* path) {
     return __syscall3(SYS_unlink, (int)path, 0, 0);
 }
 
-int mkdir(const char* path) {
+int mkdir(const char* path, ...) {
     return __syscall3(SYS_mkdir, (int)path, 0, 0);
 }
 
@@ -21,10 +21,6 @@ int close(int fd) {
 
 int lseek(int fd, int offset, int whence) {
     return __syscall3(SYS_lseek, fd, offset, whence);
-}
-
-int stat(const char* path, struct stat* st) {
-    return __syscall3(SYS_stat, (int)path, (int)st, 0);
 }
 
 int readdir_at(const char* path, int index, char name[DIRENT_NAME_MAX]) {

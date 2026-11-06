@@ -12,6 +12,15 @@
 #include <arch/i386/irq.h>
 #include <arch/i386/fb.h>
 
+static void fill_bob_stat(struct bob_stat* out, const vfs_stat_t* st) {
+    out->size  = st->size;
+    out->is_dir = st->is_dir;
+    out->mode  = st->is_dir ? 040755 : 0100644;
+    out->mtime = wall_time();
+    out->ino   = st->ino;
+    out->nlink = 1;
+}
+
 int console_read(char* dst, int max);
 void console_set_raw(int on);
 int console_poll(int events);
@@ -266,9 +275,28 @@ static void syscall_dispatch(regs_t* r) {
         if (copy_user_path(path, r->ebx) < 0 || !user_range_ok(r->ecx, sizeof(struct bob_stat)) ||
             vfs_stat(path, &st) < 0) { r->eax = (uint32_t)-1; return; }
         struct bob_stat* out = (struct bob_stat*)r->ecx;
-        out->size = st.size;
-        out->is_dir = st.is_dir;
+        fill_bob_stat(out, &st);
         r->eax = 0;
+        return;
+    }
+    case SYS_fstat: {
+        if (!user_range_ok(r->ecx, sizeof(struct bob_stat))) { r->eax = (uint32_t)-1; return; }
+        struct bob_stat* out = (struct bob_stat*)r->ecx;
+        int e = proc_fd_get((int)r->ebx);
+        if (e == FD_CONSOLE) {                       // the console is a character device
+            out->size = 0; out->is_dir = 0; out->mode = 020620; out->mtime = wall_time(); out->ino = 1; out->nlink = 1;
+            r->eax = 0;
+            return;
+        }
+        vfs_stat_t st;
+        if (e < 0 || vfs_fstat(e, &st) < 0) { r->eax = (uint32_t)-1; return; }
+        fill_bob_stat(out, &st);
+        r->eax = 0;
+        return;
+    }
+    case SYS_ftruncate: {
+        int e = proc_fd_get((int)r->ebx);
+        r->eax = (uint32_t)((e < 0 || e == FD_CONSOLE) ? -1 : vfs_ftruncate(e, r->ecx));
         return;
     }
     case SYS_readdir: {

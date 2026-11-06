@@ -53,6 +53,7 @@ typedef struct {
 typedef struct {
     uint32_t size;
     uint8_t  is_dir;
+    uint32_t ino;       // best-effort identity (fs_data, else the vnode address)
 } vfs_stat_t;
 
 // VFS core
@@ -76,3 +77,5 @@ int  vfs_readdir_path(const char* path, uint32_t index, char* name_out, uint32_t
 // directory helpers
 int  vfs_ls(const char* path);
 int  vfs_stat(const char* path, vfs_stat_t* st);
+int  vfs_fstat(int fd, vfs_stat_t* st);
+int  vfs_ftruncate(int fd, uint32_t len);          // only len == 0 or len == size is supported

@@ -57,6 +57,7 @@ unistd/termios.o \
 unistd/poll.o \
 unistd/fb.o \
 unistd/file.o \
+unistd/posix_compat.o \
 unistd/getpid.o \
 unistd/fork.o \
 unistd/exec.o \

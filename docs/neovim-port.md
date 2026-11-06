@@ -39,7 +39,7 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 
 | # | Milestone | Done when |
 |---|---|---|
-| 1 | libc headers and kernel syscalls above | A test program exercises each new call under QEMU |
+| 1 | libc headers and kernel syscalls above | **Done.** `posixtest` passes 31/31 under QEMU; existing tests unchanged |
 | 2 | libuv builds and runs | A `uvtest` program runs a timer, a pipe pair, a child process and `uv_tty` |
 | 3 | Pure-C deps (msgpack, unibilium, libvterm, tree-sitter, lpeg, utf8proc, luv) | Each links into a `deps/` archive |
 | 4 | Host codegen | Neovim's generated sources are produced on the host with host `luajit` and cmake |
@@ -53,3 +53,10 @@ Syscalls and functions to add or stub: `sigaction`, `sigprocmask`, `sigemptyset`
 - Memory: the kernel heap is 4 MiB and user `brk` heap is capped at 256 MiB per process. Neovim allocates heavily at startup.
 - No `mmap` file mappings and no sockets: anything in neovim that opens a server socket (`--listen`, RPC over TCP) will not work. Embedded RPC over stdio/pipes should.
 - LuaJIT-only features: some runtime Lua uses `ffi`. Those paths need patches or stubs.
+
+## Milestone 1 notes
+
+- Kernel: new `fstat` and `ftruncate` syscalls (`ftruncate` supports length 0 or the current size), and `stat` now returns `mode`, `mtime`, `ino` and `nlink`. `mtime` is the current time, not a per-file time.
+- libc: about 25 new headers (`sys/socket.h`, `netinet/in.h`, `pwd.h`, `dlfcn.h`, `sys/mman.h`, ...), a full Linux `errno` set, `sigaction` and the sigset functions (handlers are real, the mask is only recorded), anonymous `mmap` on `malloc`, pthread extras (keys, once, rwlock, attrs, timed wait), semaphores, `getpwuid`, `uname`, `realpath`, `access`, `execvp`.
+- Sockets, DNS and `dlopen` are stubs that fail. `socketpair` fails with `EAFNOSUPPORT`, so libuv's `uv_spawn` needs a patch to use two pipes (milestone 2).
+- Known gaps: no file `mmap`, no per-file times, `sigaction` rejects `SA_SIGINFO`, `rename` is copy then unlink and only works for files.

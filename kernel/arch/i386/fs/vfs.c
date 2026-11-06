@@ -228,8 +228,27 @@ int vfs_stat(const char* path, vfs_stat_t* st) {
 
     st->size   = vn->size;
     st->is_dir = vn->is_dir ? 1 : 0;
+    st->ino    = (uint32_t)(vn->fs_data ? vn->fs_data : vn);
     vput(vn);
     return 0;
+}
+
+int vfs_fstat(int fd, vfs_stat_t* st) {
+    if (!st || fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return -1;
+    vnode_t* vn = g_fds[fd].vn;
+    st->size   = vn->size;
+    st->is_dir = vn->is_dir ? 1 : 0;
+    st->ino    = (uint32_t)(vn->fs_data ? vn->fs_data : vn);
+    return 0;
+}
+
+int vfs_ftruncate(int fd, uint32_t len) {
+    if (fd < 0 || fd >= MAX_FD || !g_fds[fd].used) return -1;
+    file_t* f = &g_fds[fd];
+    if ((f->flags & 3) == O_RDONLY) return -1;
+    if (len == f->vn->size) return 0;
+    if (len == 0 && f->vn->ops && f->vn->ops->truncate) return f->vn->ops->truncate(f->vn);
+    return -1;
 }
 
 // readiness of an open file for poll(); plain files are always ready

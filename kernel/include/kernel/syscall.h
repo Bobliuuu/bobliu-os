@@ -46,6 +46,8 @@
 #define SYS_fcntl   55   /* fcntl(fd, cmd, arg): F_GETFL/F_SETFL (O_NONBLOCK only), F_GETFD/F_SETFD (no-op), F_DUPFD */
 #define SYS_poll    168  /* poll(struct bob_pollfd*, nfds, timeout_ms): ready count, 0 on timeout, -1 on EINTR; negative timeout waits forever */
 #define SYS_stat    106
+#define SYS_fstat   108  /* fstat(fd, struct bob_stat*) */
+#define SYS_ftruncate 93 /* ftruncate(fd, len): len 0 or the current size only */
 #define SYS_clock_gettime 265 /* clock_gettime(clk, struct bob_timespec*): clk 0 = wall (utc), 1 = since boot */  /* stat(path, struct bob_stat*) */
 
 #ifndef __ASSEMBLER__
@@ -73,6 +75,10 @@ struct bob_pollfd {
 struct bob_stat {
     unsigned int size;
     unsigned int is_dir;
+    unsigned int mode;    /* st_mode: type bits and 0755/0644 permissions */
+    unsigned int mtime;   /* seconds, boot epoch + uptime (no per-file times yet) */
+    unsigned int ino;     /* identity of the vnode */
+    unsigned int nlink;
 };
 #endif
 
