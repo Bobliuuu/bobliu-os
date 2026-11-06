@@ -305,7 +305,7 @@ Mapped to the OSDev phases. Status reflects what is in the tree.
 | III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 79 programs | ✅ |
 | III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
 | III | **kilo** editor with syntax highlighting | ✅ |
-| III | **neovim** port | 💭 stretch goal: Lua, env, tty and poll are done, but it still needs sockets, `mmap`, `sigaction` and an epoll-style API for libuv |
+| III | **neovim** port | 🚧 in progress, plan in [docs/neovim-port.md](docs/neovim-port.md). Lua, env, tty and poll are done, but it still needs Lua, env, tty and poll are done, but it still needs sockets, `mmap`, `sigaction` and an epoll-style API for libuv |
 | IV | Networking, sound, USB, GUI | 💭 not started |
 
 ## ⚠️ Known limitations
