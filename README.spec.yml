@@ -1,0 +1,280 @@
+# python3 ~/video-readme-maker/vrm.py all README.spec.yml
+# numbers: tools/record_build.py (builds the ISO, writes results/build.json) -> tools/readme_data.py
+project:
+  name: bobliu OS
+  emoji: "🧠"
+  tagline: "A from-scratch 32-bit x86 operating system that boots, forks, pipes, runs Lua, and plays DOOM"
+  repo: Bobliuuu/bobliu-os
+hero:
+  title: bobliu OS
+  subtitle: "from _start to DOOM: kernel, libc, shell and 80 programs written from scratch"
+  chips: [i686, GRUB Multiboot, C + ASM, no Linux no glibc]
+theme: {accent: "#4aa8ff", accent2: "#ff6b3d", accent3: "#f2c14e", good: "#3ddc97"}
+readme_out: README.md
+assets_dir: assets
+badges:
+  - {label: arch, message: i686, color: 4aa8ff}
+  - {label: boot, message: "GRUB Multiboot", color: ff9a3d}
+  - {label: code, message: "C + ASM, no Linux, no glibc", color: 8892a0}
+  - {label: ISO, message: "{{ n.iso.text }}", color: 3ddc97}
+  - {label: programs, message: "{{ n.programs.text }}", color: f2c14e}
+  - {label: release, message: "v0.1.0", color: 4aa8ff, link: "https://github.com/Bobliuuu/bobliu-os/releases/tag/v0.1.0"}
+  - {label: license, message: MIT, color: f2c14e, link: LICENSE}
+nav:
+  - {emoji: "🎬", label: Video, anchor: video}
+  - {emoji: "🚀", label: Quickstart, anchor: quickstart}
+  - {emoji: "✨", label: Features, anchor: features}
+  - {emoji: "🏗️", label: Architecture, anchor: architecture}
+  - {emoji: "📊", label: Build numbers, anchor: numbers}
+  - {emoji: "🧪", label: Tests, anchor: tests}
+  - {emoji: "⚠️", label: Limitations, anchor: caveats}
+  - {emoji: "🗺️", label: Repo map, anchor: repo-map}
+
+numbers:
+  iso: {file: results/derived/readme_data.json, path: iso_mb, fmt: "{:.1f}", unit: " MB"}
+  initrd: {file: results/derived/readme_data.json, path: initrd_mb, fmt: "{:.1f}", unit: " MB"}
+  kernel_kb: {file: results/derived/readme_data.json, path: kernel_kb, unit: " KB"}
+  programs: {file: results/derived/readme_data.json, path: programs}
+  tests: {file: results/derived/readme_data.json, path: test_programs}
+  secs: {file: results/derived/readme_data.json, path: build_seconds, unit: " s"}
+  loc_k: {file: results/derived/readme_data.json, path: loc.kernel, fmt: "{:,.0f}"}
+  loc_l: {file: results/derived/readme_data.json, path: loc.libc, fmt: "{:,.0f}"}
+  loc_u: {file: results/derived/readme_data.json, path: loc.user, fmt: "{:,.0f}"}
+  loc_all: {file: results/derived/readme_data.json, path: loc_total, fmt: "{:,.0f}"}
+
+intro: |
+  <a id="video"></a>
+  bobliu is a hobby kernel written to learn how every layer fits together, following the [OSDev "Creating an Operating System"](https://wiki.osdev.org/Creating_an_Operating_System) roadmap and then pushed well past it.
+  No Linux, no borrowed kernel: its own bootstrap, interrupts, paging, allocators, scheduler, VFS, filesystems, libc, shell and coreutils. It boots from GRUB into a **userland shell** with tab completion, history, pipes, redirection, scripting,
+  `vi`, a Lua 5.1 interpreter, a port of the real Neovim, and a Doom port. A fresh clone builds a **{{ n.iso.text }}** bootable ISO with **{{ n.programs.text }} programs** in about {{ n.secs.text }} on a laptop.
+
+  <p align="center"><img src="docs/img/doom.png" width="640" alt="Doom (Freedoom) running on bobliu in QEMU"></p>
+  <p align="center"><sub>Freedoom running as a ring 3 process on bobliu: framebuffer out, raw scancodes in. Screenshot taken from this repo's own ISO under QEMU.</sub></p>
+
+video:
+  url: ""
+  caption: "Explainer video (voice-over and captions): what bobliu is, how it is built, what ships, and the limits"
+  mp4: video/bobliu_os_explainer.mp4
+  gif: video/preview.gif
+  srt: video/bobliu_os_explainer.srt
+  poster: video/poster.png
+  out_dir: video/.render
+  fps: 24
+  max_mb: 22
+  render_crf: 18
+  concurrency: 4
+  music: true
+  voice: {engine: openai, voice: alloy, model: gpt-4o-mini-tts, tempo: 1.2}
+  scenes:
+    - type: title
+      title: bobliu OS
+      subtitle: From _start to DOOM
+      chips: [i686, GRUB, C and assembly, no Linux]
+      say: "bobliu O S: a from scratch thirty two bit x86 operating system. It boots, forks, pipes, runs Lua, and plays DOOM."
+    - type: problem
+      heading: "Why build an OS?"
+      bullets:
+        - "To learn how every layer fits together"
+        - "Bootstrap, interrupts, paging, scheduler, filesystems"
+        - "Then libc, a shell, and real programs on top"
+        - "No Linux, no borrowed kernel, no glibc"
+      say: "bobliu is a hobby kernel written to learn how every layer fits together. Its own bootstrap, interrupts, paging, allocators, scheduler, file systems, libc, shell and core utilities. No Linux, no borrowed kernel, no glibc."
+    - type: architecture
+      diagram: layers
+      heading: "The layers"
+      say: "User programs run in ring three on top of the libc. They enter the kernel through int eighty with Linux i three eighty six syscall numbers. The kernel has a process layer with a preemptive scheduler and copy on write fork, a file system layer behind a V F S, a memory layer, and drivers."
+    - type: stat
+      number: loc_all
+      kicker: "lines of C and assembly written for this repo"
+      label: "lines"
+      sub: "kernel, libc and user programs; vendored Doom, Lua and Freedoom are extra"
+      say: "That adds up to {{ n.loc_all.numtext }} lines of C and assembly: {{ n.loc_k.numtext }} in the kernel, {{ n.loc_l.numtext }} in the libc, which includes a vendored math library, and {{ n.loc_u.numtext }} in user programs."
+    - type: chart
+      chart: sizes
+      say: "A fresh clone builds a bootable I S O of {{ n.iso.numtext }} megabytes. The kernel itself is {{ n.kernel_kb.numtext }} kilobytes. Most of the initial ramdisk is the Freedoom game data."
+    - type: cards
+      heading: "What ships"
+      cards:
+        - {title: "Kernel", sub: "ring 0", lines: ["COW fork, preemptive scheduler", "threads, signals, pipes, VFS", "bobfs on an ATA disk"]}
+        - {title: "Userland", sub: "{{ n.programs.text }} programs", lines: ["own libc, sh with history and tab completion", "vi, kilo, Lua 5.1", "{{ n.tests.text }} in-OS test programs"]}
+        - {title: "Big ports", sub: "running on bobliu", lines: ["Doom (doomgeneric + Freedoom)", "Neovim 0.10.4, cross-built", "slow to start under QEMU"]}
+      footer: "Single core, VGA and linear framebuffer, PS/2 keyboard"
+      say: "What ships: a kernel with copy on write fork, a preemptive scheduler, threads, signals, pipes and its own file system. A userland of {{ n.programs.numtext }} programs, with a shell, vi, the kilo editor and Lua. And two big ports: Doom, and the real Neovim, which is slow to start under QEMU."
+    - type: terminal
+      heading: "Inside bobliu"
+      lines:
+        - {cmd: "echo hi | tr a-z A-Z"}
+        - {out: "HI"}
+        - {cmd: "lua -e \"for i=1,3 do print(i, i*i) end\""}
+        - {out: "1       1"}
+        - {out: "2       4"}
+        - {out: "3       9"}
+        - {cmd: "doom -warp 1 1 -skill 2"}
+      say: "Pipes work, Lua runs, and the finale is Doom, launched from the shell."
+    - type: caveats
+      heading: "Honest limits"
+      bullets:
+        - "Single core, at most 16 processes, 16 fds each"
+        - "bobfs: 128 files, no cache, no journal"
+        - "Kernel-mode exceptions halt the machine"
+        - "No networking, sound, USB or serial console"
+      say: "The limits. Single core, at most sixteen processes. The bobfs file system has no cache and no journal. Kernel mode exceptions halt the machine. There is no networking, sound or U S B. It is a learning O S, not a Linux replacement."
+    - type: end
+      title: bobliu OS
+      subtitle: "./iso.sh then ./qemu.sh"
+      say: "Clone the repo, run iso dot s h, then qemu dot s h, and boot it."
+
+tables:
+  - id: loc_tbl
+    title: "Code written for this repo (results/build.json)"
+    file: results/derived/readme_data.json
+    rows_path: loc_rows
+    columns:
+      - {key: part, title: Part}
+      - {key: lines, title: Lines, align: right, fmt: "{:,.0f}"}
+  - id: size_tbl
+    title: "Build artifacts (results/build.json)"
+    file: results/derived/readme_data.json
+    rows_path: size_rows
+    columns:
+      - {key: item, title: Artifact}
+      - {key: mb, title: MB, align: right, fmt: "{:,.1f}"}
+charts:
+  - id: sizes
+    type: bar
+    title: "Build artifact sizes (MB)"
+    subtitle: "./iso.sh output"
+    better: lower
+    file: results/derived/readme_data.json
+    rows_path: size_rows
+    label: item
+    y: mb
+    fmt: "{:,.1f}"
+    unit: " MB"
+  - id: loc
+    type: bar
+    title: "Lines of code by part"
+    subtitle: "kernel/, libc/, user/"
+    better: lower
+    file: results/derived/readme_data.json
+    rows_path: loc_rows
+    label: part
+    y: lines
+    fmt: "{:,.0f}"
+diagrams:
+  - id: layers
+    title: "bobliu: ring 3, syscall gate, ring 0"
+    nodes:
+      - {id: u, label: "User space (ring 3)", sub: "sh, coreutils, vi, kilo, lua, doom", col: 0, row: 0, kind: io}
+      - {id: l, label: "libc.a", sub: "stdio, malloc, string, libm, pthread", col: 1, row: 0}
+      - {id: s, label: "int 0x80", sub: "Linux i386 numbering", col: 2, row: 0, kind: accent}
+      - {id: p, label: "Process layer", sub: "scheduler, COW fork, signals, threads", col: 3, row: 0}
+      - {id: f, label: "VFS", sub: "initrd tar, ramfs, bobfs, devfs, pipes", col: 3, row: 1, kind: store}
+      - {id: m, label: "Memory", sub: "PMM, paging, kernel heap", col: 2, row: 1}
+      - {id: d, label: "Drivers", sub: "PS/2, VGA, framebuffer, ATA, PIT, RTC", col: 1, row: 1}
+    edges:
+      - {from: u, to: l}
+      - {from: l, to: s}
+      - {from: s, to: p}
+      - {from: p, to: f}
+      - {from: p, to: m}
+      - {from: f, to: d}
+
+sections:
+  - title: Quickstart
+    emoji: "🚀"
+    id: quickstart
+    body: |
+      **Prereqs:** `i686-elf` cross GCC and binutils in `~/opt/cross/bin`, `i686-elf-grub-mkrescue`, `xorriso`, `qemu-system-i386`, GNU `make`.
+
+      ```sh
+      git clone https://github.com/Bobliuuu/bobliu-os && cd bobliu-os
+      export PATH="$HOME/opt/cross/bin:$PATH"
+      export MAKE=make            # scripts default to gmake (macOS/Homebrew)
+      ./iso.sh                    # build libc, kernel, userland, initrd -> bobliu.iso
+      dd if=/dev/zero of=disk.img bs=1M count=4      # optional ATA disk for bobfs
+      ./qemu.sh                   # build + boot in QEMU
+      ```
+      The Freedoom IWAD is committed, so a fresh clone builds and runs Doom with nothing extra.
+
+      <p align="center"><img src="docs/img/shell.png" width="640" alt="bobliu shell running Lua"></p>
+
+      | Script | What it does |
+      |---|---|
+      | `./iso.sh` | headers, `libc.a`/`libk.a`, kernel, every `user/*.c`, initrd tar, `bobliu.iso` |
+      | `./qemu.sh` | runs `iso.sh`, boots QEMU (`-d int,cpu_reset -D qemu.log` so triple faults leave a trace) |
+      | `./clean.sh` | remove build products |
+
+      GRUB menu: `bobliu (user shell)` (`init=/bin/sh`), `bobliu (kernel shell)`, `bobliu (noshell)`.
+  - title: Features
+    emoji: "✨"
+    id: features
+    body: |
+      - 🥾 **Multiboot 1** boot via GRUB; 🧱 **GDT + TSS**; ⚡ **IDT / ISRs / IRQs**, 100 Hz PIT, `int 0x80` syscalls
+      - 🧠 **Memory**: bitmap PMM, paging, first-fit heap; 🛡️ kernel-stack guard pages, `CR0.WP`
+      - 🐄 **Copy-on-write `fork`**, 🔁 preemptive round-robin scheduler (50 ms), 🧵 threads with futex, 📬 signals
+      - 💾 **Storage**: tar initrd, ramfs `/tmp`, ATA PIO, **bobfs** (own on-disk filesystem), pipes
+      - 📚 **Userland**: own libc, `sh` with history and Tab completion, `vi`, `kilo`, Lua 5.1, the real **Neovim 0.10.4** port and **Doom**
+
+      <p align="center"><img src="docs/img/neovim.png" width="640" alt="neovim 0.10.4 in insert mode on bobliu"></p>
+      <p align="center"><img src="docs/img/kilo.png" width="640" alt="kilo editing C on bobliu"></p>
+
+      The complete feature list, syscall table, address-space map and demo script are in [docs/README_FULL.md](docs/README_FULL.md) and [docs/architecture.md](docs/architecture.md).
+  - title: Architecture
+    emoji: "🏗️"
+    id: architecture
+    diagrams: [layers]
+    details:
+      - summary: "Boot sequence"
+        body: |
+          ```mermaid
+          sequenceDiagram
+              participant G as GRUB
+              participant B as boot.S
+              participant K as kernel_main
+              participant P as init (sh)
+              G->>B: load myos.kernel + initrd module, jump to _start
+              B->>K: 16 KiB stack, kernel_early, global ctors
+              K->>K: GDT/IDT/PIC/PIT, PMM, paging, heap, TSS
+              K->>K: mount initrd on /, ramfs on /tmp, bobfs on /disk
+              K->>P: proc_spawn("/bin/sh") from init= cmdline
+              P->>P: fork + execve + waitpid loop
+          ```
+  - title: Build numbers
+    emoji: "📊"
+    id: numbers
+    body: "Recorded by `tools/record_build.py`, which runs `./iso.sh` and writes `results/build.json`."
+    highlights:
+      - {label: "Bootable ISO", number: iso}
+      - {label: "Programs in /bin", number: programs}
+      - {label: "Kernel image", number: kernel_kb}
+      - {label: "Lines written", number: loc_all}
+    charts: [sizes, loc]
+    tables: [loc_tbl, size_tbl]
+  - title: Tests
+    emoji: "🧪"
+    id: tests
+    body: |
+      {{ n.tests.text }} test programs are built into `/bin` and run inside bobliu; each prints its own pass/fail lines (`forktest`, `fdtest`, `memtest`, `wtest`, `pipetest`, `sigtest`, `threadtest`, `timetest`, `polltest`, `stdiotest`, `floattest`, `envtest`, `ttytest`, `crash`, `posixtest`, ...).
+      Covered: COW fork, exec and 40 forks without leaking frames, fd duplication, `brk`/`malloc`, pipes, signals, threads, time, poll, libc stdio and floats, termios, and ring 3 crashes killing only the offender.
+      This README does not claim a pass count: the programs are run interactively inside the OS (see [docs/README_FULL.md](docs/README_FULL.md)).
+
+caveats:
+  - "Single core, at most **16 processes**, **16 fds** each, 16 args of 128 bytes."
+  - "`/tmp` is RAM (256 KiB per file); `bobfs` has 128 files, 268 KiB per file, 27 char names, no cache or journal."
+  - "stdin is one global console buffer; no process groups. Kernel-mode exceptions halt the machine."
+  - "VGA/framebuffer only: no sound, no networking, no serial console. The Neovim port runs with an 8-colour terminal, no tree-sitter parsers, no RPC socket and a slow startup (see docs/neovim-port.md)."
+  - "Vendored code keeps its own license (doomgeneric, Freedoom, Lua, kilo); bobliu's own code is MIT."
+repo_map:
+  - {path: kernel/, desc: "kernel: boot.S, cpu, mm, dev, fs, shell"}
+  - {path: libc/, desc: "libk.a (kernel) and libc.a (user), headers, musl libm"}
+  - {path: user/, desc: "sh, coreutils, vi and test programs (built into initrd/bin)"}
+  - {path: doom/, desc: "vendored doomgeneric, platform layer and Freedoom IWAD"}
+  - {path: lua/, desc: "vendored Lua 5.1"}
+  - {path: ports/, desc: "ported third-party software (Neovim and its dependencies)"}
+  - {path: toolchain/, desc: "crt0, linker script and the i686-bobliu-gcc wrapper"}
+  - {path: docs/, desc: "architecture.md, neovim-port.md, screenshots, README_FULL.md (the earlier long README)"}
+  - {path: tools/, desc: "record_build.py (builds the ISO, records results/build.json) and readme_data.py"}
+  - {path: README.spec.yml, desc: "spec for video-readme-maker"}
+  - {path: video/, desc: "explainer mp4, srt, poster, preview.gif (generated)"}
+footer: "Generated with video-readme-maker from README.spec.yml and results/."

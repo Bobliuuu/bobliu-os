@@ -1,188 +1,80 @@
 <div align="center">
 
+<img src="assets/hero.svg" alt="bobliu OS" width="100%">
+
 # 🧠 bobliu OS
 
-### A from-scratch 32-bit x86 operating system that boots, forks, pipes, runs **Lua**, and plays **DOOM**.
+**A from-scratch 32-bit x86 operating system that boots, forks, pipes, runs Lua, and plays DOOM**
 
-![arch](https://img.shields.io/badge/arch-i686-blue?style=for-the-badge)
-![boot](https://img.shields.io/badge/boot-GRUB%20Multiboot-orange?style=for-the-badge)
-![lang](https://img.shields.io/badge/C%20%2B%20ASM-no%20Linux%2C%20no%20glibc-informational?style=for-the-badge)
-![doom](https://img.shields.io/badge/DOOM-~60%20fps-red?style=for-the-badge)
-![status](https://img.shields.io/badge/status-hobby%20kernel-success?style=for-the-badge)
+![arch: i686](https://img.shields.io/badge/arch-i686-4aa8ff) ![boot: GRUB Multiboot](https://img.shields.io/badge/boot-GRUB%20Multiboot-ff9a3d) ![code: C + ASM, no Linux, no glibc](https://img.shields.io/badge/code-C%20%2B%20ASM%2C%20no%20Linux%2C%20no%20glibc-8892a0) ![ISO: 51.6 MB](https://img.shields.io/badge/ISO-51.6%20MB-3ddc97) ![programs: 80](https://img.shields.io/badge/programs-80-f2c14e) [![release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-4aa8ff)](https://github.com/Bobliuuu/bobliu-os/releases/tag/v0.1.0) [![license: MIT](https://img.shields.io/badge/license-MIT-f2c14e)](LICENSE)
 
-<img src="docs/img/doom.png" width="640" alt="Doom (Freedoom) running on bobliu in QEMU">
-
-*Freedoom running as a ring 3 process on bobliu: framebuffer out, raw scancodes in. Screenshot taken from this repo's own ISO under QEMU.*
-
-[🚀 Quickstart](#-quickstart) · [✨ Features](#-features) · [🏗️ Architecture](#%EF%B8%8F-architecture) · [🎬 Demo script](#-demo-script) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [📚 Deep dive](docs/architecture.md)
+[🎬 Video](#video) · [🚀 Quickstart](#quickstart) · [✨ Features](#features) · [🏗️ Architecture](#architecture) · [📊 Build numbers](#numbers) · [🧪 Tests](#tests) · [⚠️ Limitations](#caveats) · [🗺️ Repo map](#repo-map)
 
 </div>
 
 ---
 
-## 👀 What is this?
+**Explainer video (voice-over and captions): what bobliu is, how it is built, what ships, and the limits**
 
-bobliu is a hobby kernel written to learn how every layer fits together, following the
-[OSDev "Creating an Operating System"](https://wiki.osdev.org/Creating_an_Operating_System)
-roadmap, and then pushed well past it. No Linux, no borrowed kernel: its own bootstrap,
-interrupts, paging, allocators, scheduler, VFS, filesystems, libc, shell and coreutils.
+[![Explainer video preview (click for the mp4)](video/preview.gif)](video/bobliu_os_explainer.mp4)
 
-It boots from GRUB into a **userland shell** (itself an ELF program) with tab completion,
-history, pipes, redirection, scripting, `vi`, a Lua 5.1 interpreter and a Doom port.
+<a id="video"></a>
+bobliu is a hobby kernel written to learn how every layer fits together, following the [OSDev "Creating an Operating System"](https://wiki.osdev.org/Creating_an_Operating_System) roadmap and then pushed well past it.
+No Linux, no borrowed kernel: its own bootstrap, interrupts, paging, allocators, scheduler, VFS, filesystems, libc, shell and coreutils. It boots from GRUB into a **userland shell** with tab completion, history, pipes, redirection, scripting,
+`vi`, a Lua 5.1 interpreter, a port of the real Neovim, and a Doom port. A fresh clone builds a **51.6 MB** bootable ISO with **80 programs** in about 15 s on a laptop.
 
-<p align="center"><img src="docs/img/shell.png" width="640" alt="bobliu shell running Lua"></p>
+<p align="center"><img src="docs/img/doom.png" width="640" alt="Doom (Freedoom) running on bobliu in QEMU"></p>
+<p align="center"><sub>Freedoom running as a ring 3 process on bobliu: framebuffer out, raw scancodes in. Screenshot taken from this repo's own ISO under QEMU.</sub></p>
 
-```
-Bobliu's kernel
-bobliu sh (pid 1). commands live in /bin; 'exit' leaves.
-/ $ echo hi | tr a-z A-Z
-HI
-/ $ ls /bin | wc -l
-88
-/ $ lua -e "for i=1,3 do print(i, i*i, math.sqrt(i)) end"
-1       1       1
-2       4       1.4142135623731
-3       9       1.7320508075689
-/ $ doom -warp 1 1 -skill 2
-```
-
-> 🛑 **Scope:** single core, VGA text + linear framebuffer, PS/2 keyboard, at most 16 processes.
-> It is a learning OS, not a Linux replacement. See [known limitations](#-known-limitations).
+<a id="quickstart"></a>
 
 ## 🚀 Quickstart
 
-**Prereqs:** `i686-elf` cross GCC and binutils in `~/opt/cross/bin`, `i686-elf-grub-mkrescue`,
-`xorriso`, `qemu-system-i386`, GNU `make`.
+**Prereqs:** `i686-elf` cross GCC and binutils in `~/opt/cross/bin`, `i686-elf-grub-mkrescue`, `xorriso`, `qemu-system-i386`, GNU `make`.
 
 ```sh
 git clone https://github.com/Bobliuuu/bobliu-os && cd bobliu-os
 export PATH="$HOME/opt/cross/bin:$PATH"
 export MAKE=make            # scripts default to gmake (macOS/Homebrew)
-
 ./iso.sh                    # build libc, kernel, userland, initrd -> bobliu.iso
 dd if=/dev/zero of=disk.img bs=1M count=4      # optional ATA disk for bobfs
 ./qemu.sh                   # build + boot in QEMU
 ```
-
 The Freedoom IWAD is committed, so a fresh clone builds and runs Doom with nothing extra.
 
-| 🧰 Script | What it does |
+<p align="center"><img src="docs/img/shell.png" width="640" alt="bobliu shell running Lua"></p>
+
+| Script | What it does |
 |---|---|
-| `./iso.sh` | headers → `libc.a`/`libk.a` → kernel → every `user/*.c` → initrd tar → `bobliu.iso` |
+| `./iso.sh` | headers, `libc.a`/`libk.a`, kernel, every `user/*.c`, initrd tar, `bobliu.iso` |
 | `./qemu.sh` | runs `iso.sh`, boots QEMU (`-d int,cpu_reset -D qemu.log` so triple faults leave a trace) |
 | `./clean.sh` | remove build products |
 
-**GRUB menu:**
+GRUB menu: `bobliu (user shell)` (`init=/bin/sh`), `bobliu (kernel shell)`, `bobliu (noshell)`.
 
-| Entry | Cmdline | Behavior |
-|---|---|---|
-| `bobliu (user shell)` ⭐ | `init=/bin/sh` | `/bin/sh` is pid 1; on exit you drop to the kernel shell |
-| `bobliu (kernel shell)` | none | kernel shell only |
-| `bobliu (noshell)` | `noshell` | no shell, keyboard ignored |
-
-Add a program: drop `user/myprog.c`, rerun `./iso.sh`, run `myprog`.
+<a id="features"></a>
 
 ## ✨ Features
 
-### 🧬 Kernel
-- 🥾 **Multiboot 1** boot via GRUB: memory map, cmdline (`init=`, `noshell`), initrd module
-- 🧱 **GDT + TSS** with ring 0/3 segments; `esp0` switched per process
-- ⚡ **IDT / ISRs / IRQs**: exceptions 0-31, remapped 8259 PIC, 100 Hz PIT, `int 0x80` syscalls
-- 🧠 **Memory**: bitmap PMM, paging (kernel identity-mapped 256 MiB, per-process user space), first-fit heap with coalescing
-- 🛡️ **Hardening**: kernel-stack **guard pages**, `CR0.WP`, ring 3 faults kill only the offender
-- 🐄 **Copy-on-write `fork`** with per-frame refcounts
-- 🔁 **Preemptive round-robin scheduler** (50 ms slices), `swtch()` context switching
-- 🧵 **Threads**: `clone`-style kernel threads, `pthread` create/join, mutex, condvar on a futex
-- 📬 **Signals**: `kill`, `signal`, `sigreturn`, Ctrl-C, interrupts blocking calls
-- 🕐 **Time**: CMOS RTC + PIT clock, `nanosleep`, `clock_gettime`
-- 🖥️ **Console**: ANSI-capable VGA terminal, termios-ish tty (raw mode, winsize, `isatty`), `poll`, `O_NONBLOCK`
-- 🎨 **640x480x32 framebuffer** and raw key up/down events
+- 🥾 **Multiboot 1** boot via GRUB; 🧱 **GDT + TSS**; ⚡ **IDT / ISRs / IRQs**, 100 Hz PIT, `int 0x80` syscalls
+- 🧠 **Memory**: bitmap PMM, paging, first-fit heap; 🛡️ kernel-stack guard pages, `CR0.WP`
+- 🐄 **Copy-on-write `fork`**, 🔁 preemptive round-robin scheduler (50 ms), 🧵 threads with futex, 📬 signals
+- 💾 **Storage**: tar initrd, ramfs `/tmp`, ATA PIO, **bobfs** (own on-disk filesystem), pipes
+- 📚 **Userland**: own libc, `sh` with history and Tab completion, `vi`, `kilo`, Lua 5.1, the real **Neovim 0.10.4** port and **Doom**
 
-### 💾 Storage
-- 📦 **tar initrd** (read-only) and **ramfs** on `/tmp` behind a **VFS** with a mount table
-- 💽 **ATA PIO driver** exposed as `/dev/hd0`
-- 🗄️ **bobfs**: own on-disk filesystem (1 KiB blocks, 128 inodes, 12 direct + 1 indirect) on `/disk`
-- 🔌 **Pipes** (4 KiB ring buffer, blocking, EOF/EPIPE) and fd inheritance with `dup`/`dup2`
+<p align="center"><img src="docs/img/neovim.png" width="640" alt="neovim 0.10.4 in insert mode on bobliu"></p>
+<p align="center"><img src="docs/img/kilo.png" width="640" alt="kilo editing C on bobliu"></p>
 
-### 📚 Userland
-- 🧰 **Own libc**: stdio (`FILE`, `printf` with floats), `malloc`, string, ctype, `qsort`, `scanf` family, `setjmp`, time, **musl libm**
-- 🐚 **`sh`**: quoting, `$VAR`, globbing, `&& || ;  &`, `2>&1`, `if/for/while`, scripts, raw-mode line editor with **history and Tab completion**
-- 🛠️ **88 programs**: `ls cat grep sed sort uniq find diff xxd head tail tr cut xargs more expr test printf ...`
-- ✏️ **`vi`**: normal / insert / `:` modes
-- 🌈 **`kilo`**: antirez's tiny editor ported unmodified except for 2 lines, with C/Lua-style syntax highlighting, search, Ctrl-S save
-- 🌙 **Lua 5.1** interpreter
-- 🦄 **neovim 0.10.4**: the real editor, cross-built from source with libuv, luv, msgpack, tree-sitter and libvterm. Full-screen TUI, insert/normal/command modes, `:wq`. Slow to start under QEMU (about a minute and a half)
-- 👹 **Doom** (doomgeneric + Freedoom), ~60 fps under QEMU
+The complete feature list, syscall table, address-space map and demo script are in [docs/README_FULL.md](docs/README_FULL.md) and [docs/architecture.md](docs/architecture.md).
+
+<a id="architecture"></a>
 
 ## 🏗️ Architecture
 
-```mermaid
-flowchart TB
-    subgraph U["👤 Ring 3: user space"]
-        direction LR
-        SH["sh<br/>line editor, pipes, scripts"]
-        CU["coreutils<br/>ls cat grep sed ..."]
-        APPS["vi · lua · doom"]
-        LIBC["libc.a<br/>stdio malloc string libm pthread"]
-        SH --- LIBC
-        CU --- LIBC
-        APPS --- LIBC
-    end
+<p align="center"><img src="assets/layers.svg" alt="bobliu: ring 3, syscall gate, ring 0" width="100%"></p>
 
-    SYS{{"int 0x80 · Linux i386 numbering"}}
-
-    subgraph K["🧬 Ring 0: kernel"]
-        direction TB
-        subgraph PROC["Process layer"]
-            direction LR
-            SCH["scheduler<br/>round-robin, 50 ms"]
-            FORK["fork (COW) · exec · wait"]
-            SIG["signals"]
-            THR["threads + futex"]
-        end
-        subgraph FS["Filesystem layer"]
-            direction LR
-            VFS["VFS + mount table<br/>per-process fd table"]
-            TAR["initrd tar<br/>/"]
-            RAM["ramfs<br/>/tmp"]
-            BOB["bobfs<br/>/disk"]
-            DEVFS["devfs<br/>/dev/hd0"]
-            PIPE["pipes"]
-            VFS --> TAR & RAM & BOB & DEVFS & PIPE
-        end
-        subgraph MM["Memory layer"]
-            direction LR
-            PMM["PMM<br/>bitmap + refcounts"]
-            PG["paging<br/>per-process PD"]
-            HEAP["kernel heap"]
-        end
-        subgraph DRV["Drivers"]
-            direction LR
-            KBD["PS/2 kbd"]
-            VGA["VGA text + ANSI"]
-            FB["framebuffer"]
-            ATA["ATA PIO"]
-            PIT["PIT 100 Hz"]
-            RTC["CMOS RTC"]
-        end
-    end
-
-    subgraph HW["🔩 Hardware / QEMU"]
-        direction LR
-        CPU["i686 CPU"]
-        DISK["IDE disk"]
-        SCREEN["VGA / LFB"]
-        PS2["PS/2"]
-    end
-
-    U ==>|syscalls| SYS ==> K
-    PROC --> MM
-    FS --> DRV
-    DRV --> HW
-    MM --> HW
-```
-
-### 🥾 Boot sequence
+<details>
+<summary>Boot sequence</summary>
 
 ```mermaid
 sequenceDiagram
@@ -196,150 +88,81 @@ sequenceDiagram
     K->>K: mount initrd on /, ramfs on /tmp, bobfs on /disk
     K->>P: proc_spawn("/bin/sh") from init= cmdline
     P->>P: fork + execve + waitpid loop
-    Note over K,P: pid 0 sleeps in waitpid, then the kernel shell starts when init exits
 ```
 
-### 🗺️ Virtual address space
+</details>
 
-```
-0x00000000 ┌──────────────────────────────┐
-           │ kernel + identity map 256 MiB│  shared by every address space
-0x10000000 ├──────────────────────────────┤
-           │ user ELF segments + stack    │  per-process page tables
-0x20000000 │ user heap (brk / malloc)     │
-0x40000000 ├──────────────────────────────┤
-           │            ...               │
-0xE0000000 ├──────────────────────────────┤
-           │ kernel stacks (16 KiB each)  │  each preceded by an unmapped guard page
-           └──────────────────────────────┘
-```
+<a id="numbers"></a>
 
-### 📞 Syscalls
+## 📊 Build numbers
 
-Numbered like Linux i386, called through `int 0x80`.
+Recorded by `tools/record_build.py`, which runs `./iso.sh` and writes `results/build.json`.
 
-| Area | Calls |
+| Bootable ISO | Programs in /bin | Kernel image | Lines written |
+|:---:|:---:|:---:|:---:|
+| **51.6 MB** | **80** | **453 KB** | **21,526** |
+
+**Code written for this repo (results/build.json)**
+
+| Part | Lines |
+| :--- | ---: |
+| kernel (C + asm) | 7,313 |
+| libc (incl. vendored musl libm) | 9,478 |
+| user programs | 4,735 |
+
+<sub>Source: `results/derived/readme_data.json`</sub>
+
+**Build artifacts (results/build.json)**
+
+| Artifact | MB |
+| :--- | ---: |
+| kernel | 0.5 |
+| Freedoom IWAD | 27.3 |
+| initrd (all programs + IWAD) | 42.9 |
+| bootable ISO | 51.6 |
+
+<sub>Source: `results/derived/readme_data.json`</sub>
+
+<p align="center"><img src="assets/sizes.svg" alt="Build artifact sizes (MB)" width="100%"></p>
+
+<p align="center"><img src="assets/loc.svg" alt="Lines of code by part" width="100%"></p>
+
+<a id="tests"></a>
+
+## 🧪 Tests
+
+18 test programs are built into `/bin` and run inside bobliu; each prints its own pass/fail lines (`forktest`, `fdtest`, `memtest`, `wtest`, `pipetest`, `sigtest`, `threadtest`, `timetest`, `polltest`, `stdiotest`, `floattest`, `envtest`, `ttytest`, `crash`, `posixtest`, ...).
+Covered: COW fork, exec and 40 forks without leaking frames, fd duplication, `brk`/`malloc`, pipes, signals, threads, time, poll, libc stdio and floats, termios, and ring 3 crashes killing only the offender.
+This README does not claim a pass count: the programs are run interactively inside the OS (see [docs/README_FULL.md](docs/README_FULL.md)).
+
+<a id="caveats"></a>
+
+## ⚠️ Honest caveats
+
+- Single core, at most **16 processes**, **16 fds** each, 16 args of 128 bytes.
+- `/tmp` is RAM (256 KiB per file); `bobfs` has 128 files, 268 KiB per file, 27 char names, no cache or journal.
+- stdin is one global console buffer; no process groups. Kernel-mode exceptions halt the machine.
+- VGA/framebuffer only: no sound, no networking, no serial console. The Neovim port runs with an 8-colour terminal, no tree-sitter parsers, no RPC socket and a slow startup (see docs/neovim-port.md).
+- Vendored code keeps its own license (doomgeneric, Freedoom, Lua, kilo); bobliu's own code is MIT.
+
+<a id="repo-map"></a>
+
+## 🗺️ Repo map
+
+| Path | What it is |
 |---|---|
-| Process | `exit` `fork` `execve` `waitpid` `getpid` `clone` `futex` `sched_yield` `kill` `signal` `sigreturn` |
-| Files | `open` `close` `read` `write` `lseek` `stat` `readdir` `unlink` `mkdir` `chdir` `getcwd` |
-| FDs | `dup` `dup2` `pipe` `fcntl` `poll` |
-| Memory | `brk` |
-| Time | `time` `clock_gettime` `nanosleep` |
-| TTY / display | `tcgetattr` `tcsetattr` `tcsetraw` `fb_init` `fb_exit` |
+| `kernel/` | kernel: boot.S, cpu, mm, dev, fs, shell |
+| `libc/` | libk.a (kernel) and libc.a (user), headers, musl libm |
+| `user/` | sh, coreutils, vi and test programs (built into initrd/bin) |
+| `doom/` | vendored doomgeneric, platform layer and Freedoom IWAD |
+| `lua/` | vendored Lua 5.1 |
+| `ports/` | ported third-party software (Neovim and its dependencies) |
+| `toolchain/` | crt0, linker script and the i686-bobliu-gcc wrapper |
+| `docs/` | architecture.md, neovim-port.md, screenshots, README_FULL.md (the earlier long README) |
+| `tools/` | record_build.py (builds the ISO, records results/build.json) and readme_data.py |
+| `README.spec.yml` | spec for video-readme-maker |
+| `video/` | explainer mp4, srt, poster, preview.gif (generated) |
 
-Full details, data structures and diagrams of fork/exec/wait, the scheduler, the interrupt path and
-the VFS live in **[docs/architecture.md](docs/architecture.md)**.
+---
 
-### 🗂️ Repo layout
-
-```
-kernel/arch/i386/   boot.S swtch.S isr_stubs.S linker.ld
-                    cpu/ (gdt idt isr proc signal user_exec)   mm/ (pmm paging heap syscall)
-                    dev/ (console keyboard timer pic vga fb ata rtc)   fs/ (vfs ramfs bobfs pipe ...)
-                    shell/ (kernel shell)  interrupts/  tss/
-kernel/kernel/      kernel.c (kernel_main)
-libc/               libk.a (kernel) and libc.a (user) + headers, musl libm
-third_party/        vendored kilo editor
-user/               sh, coreutils, vi, test programs (built into initrd/bin)
-doom/  lua/         vendored doomgeneric (+ platform layer) and Lua 5.1
-toolchain/          crt0.S, user.ld, i686-bobliu-gcc wrapper
-docs/               architecture.md, screenshots
-```
-
-<p align="center"><img src="docs/img/kilo.png" width="640" alt="kilo editing C on bobliu"></p>
-
-<p align="center"><img src="docs/img/neovim.png" width="640" alt="neovim 0.10.4 in insert mode on bobliu"></p>
-
-*Neovim 0.10.4 itself, built from source for bobliu, in insert mode.*
-
-## 🎬 Demo script
-
-A 3 minute tour that shows off the whole stack:
-
-```sh
-# 1. boot, then show the OS is real
-uname -a ; cat /hello.txt ; ls /bin | wc -l
-
-# 2. processes: copy-on-write fork, 40 short-lived children
-forktest
-
-# 3. pipes and the shell language
-ls /bin | grep test | sort | head -n 5
-for f in a b c ; do echo $f > /tmp/$f ; done ; cat /tmp/a /tmp/b /tmp/c
-
-# 4. persistent filesystem (kernel shell: run `mkfs` once, then reboot)
-echo persisted > /disk/note ; cat /disk/note
-
-# 5. edit code with syntax highlighting, save, quit, read it back
-kilo /tmp/t.c      # Ctrl-S save, Ctrl-Q quit
-cat /tmp/t.c
-
-# 6. an interpreter running on top of it all
-lua -e "for i=1,5 do print(i, i*i, math.sqrt(i)) end"
-
-# 7. the real neovim (starts in about 90 s under QEMU; i to insert, Esc, :wq)
-nvim /tmp/hello.txt
-
-# 8. the finale
-doom -warp 1 1 -skill 2
-```
-
-**Doom controls:** arrows move/turn · Ctrl fire · Space use · Shift run · Alt strafe · 1-7 weapons · Esc menu.
-
-## 🧪 Test programs
-
-Run any of these inside bobliu; each prints its own pass/fail lines.
-
-| Test | Covers |
-|---|---|
-| `forktest` | COW fork, exec, exit status, 40 forks without leaking frames |
-| `fdtest` | `dup`/`dup2`, shared offsets, no fd leak |
-| `memtest` | `brk`, `malloc`/`free`, COW heap |
-| `wtest` | writes, append, truncate, unlink, read-only initrd |
-| `pipetest` `sigtest` `threadtest` `timetest` `polltest` | pipes, signals, threads, time, poll |
-| `stdiotest` `floattest` `envtest` `ttytest` | libc stdio, floats and libm, environment, termios |
-| `crash` | bad syscall args and NULL writes kill only the offender |
-| `posixtest` `uvtest` `uvtest2` `uvtty` `depstest` | the POSIX layer (35 checks), libuv timers/pipes/threads/fs, libuv spawn and tty, libuv tty input, and the neovim dependencies (msgpack, unibilium, libvterm, lpeg, luv, tree-sitter) |
-
-## 🗺️ Roadmap
-
-Mapped to the OSDev phases. Status reflects what is in the tree.
-
-| Phase | Milestone | Status |
-|---|---|---|
-| I | Bare bones, Multiboot, GDT, memory, interrupts, keyboard, VFS | ✅ |
-| II | Ring 3, ELF loader, syscalls, toolchain, libc, fork/exec, shell, file syscalls | ✅ |
-| II | COW fork, stack guards, `brk`/`malloc`, writable `/tmp`, ATA disk | ✅ |
-| II+ | cwd, pipes, signals, **bobfs**, tab completion, `vi` | ✅ |
-| III | Time, threads, framebuffer, full stdio, **Doom**, **Lua**, shell language, 88 programs | ✅ |
-| III | termios, environment, `poll`/`select`, unlimited exec loader | ✅ |
-| III | **kilo** editor with syntax highlighting | ✅ |
-| III | **neovim** port | ✅ runs (see [docs/neovim-port.md](docs/neovim-port.md)): `nvim` starts its TUI, edits and saves files. Limits: 8-colour terminal, no tree-sitter parsers loaded, no RPC socket, slow startup |
-| IV | Networking, sound, USB, GUI | 💭 not started |
-
-## ⚠️ Known limitations
-
-Honest list; details in [docs/architecture.md](docs/architecture.md#11-known-limitations).
-
-- Single core, max **16 processes**, **16 fds** each, 16 args of 128 bytes
-- `/tmp` is RAM (256 KiB per file); `bobfs` has 128 files, 268 KiB per file, 27 char names, no cache or journal
-- stdin is one global console buffer; no process groups
-- Kernel-mode exceptions halt the machine; OOM during a COW fault kills the process
-- VGA/framebuffer only, no sound, no networking, no serial console
-
-## 📄 License
-
-bobliu's own code is [MIT](LICENSE). Vendored code keeps its own license: doomgeneric (`doom/LICENSE`), Freedoom (`doom/wad/COPYING.txt`), Lua (`lua/LICENSE`), kilo (`third_party/kilo/LICENSE`, BSD-2).
-
-## 🙏 Credits
-
-- 📖 [OSDev wiki](https://wiki.osdev.org/) and its Meaty Skeleton
-- 👹 [doomgeneric](https://github.com/ozkl/doomgeneric) and [Freedoom](https://freedoom.github.io/) (BSD licensed IWAD, see `doom/wad/COPYING.txt`)
-- 🌈 [kilo](https://github.com/antirez/kilo) by antirez
-- 🌙 [Lua 5.1](https://www.lua.org/) (MIT) and [musl libm](https://musl.libc.org/)
-
-<div align="center">
-
-**Built by [@Bobliuuu](https://github.com/Bobliuuu)** · from `_start` to DOOM 🔥
-
-</div>
+<div align="center"><sub>Generated with video-readme-maker from README.spec.yml and results/.</sub></div>

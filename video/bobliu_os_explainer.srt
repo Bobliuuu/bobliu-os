@@ -1,0 +1,108 @@
+1
+00:00:00,400 --> 00:00:04,875
+bobliu O S: a from scratch thirty two bit x86 operating system.
+
+2
+00:00:04,875 --> 00:00:08,356
+It boots, forks, pipes, runs Lua, and plays DOOM.
+
+3
+00:00:09,360 --> 00:00:14,232
+bobliu is a hobby kernel written to learn how every layer fits together.
+
+4
+00:00:14,232 --> 00:00:20,390
+Its own bootstrap, interrupts, paging, allocators, scheduler, file systems, libc, shell and
+
+5
+00:00:20,390 --> 00:00:21,405
+core utilities.
+
+6
+00:00:21,405 --> 00:00:24,044
+No Linux, no borrowed kernel, no glibc.
+
+7
+00:00:25,040 --> 00:00:27,907
+User programs run in ring three on top of the libc.
+
+8
+00:00:27,907 --> 00:00:32,797
+They enter the kernel through int eighty with Linux i three eighty six syscall numbers.
+
+9
+00:00:32,797 --> 00:00:37,800
+The kernel has a process layer with a preemptive scheduler and copy on write fork, a file
+
+10
+00:00:37,800 --> 00:00:41,004
+system layer behind a V F S, a memory layer, and drivers.
+
+11
+00:00:42,000 --> 00:00:50,834
+That adds up to 21,526 lines of C and assembly: 7,313 in the kernel, 9,478 in the libc, which
+
+12
+00:00:50,834 --> 00:00:56,628
+includes a vendored math library, and 4,735 in user programs.
+
+13
+00:00:57,630 --> 00:01:01,756
+A fresh clone builds a bootable I S O of 51.6 megabytes.
+
+14
+00:01:01,756 --> 00:01:04,334
+The kernel itself is 453 kilobytes.
+
+15
+00:01:04,334 --> 00:01:08,312
+Most of the initial ramdisk is the Freedoom game data.
+
+16
+00:01:09,310 --> 00:01:15,075
+What ships: a kernel with copy on write fork, a preemptive scheduler, threads, signals, pipes
+
+17
+00:01:15,075 --> 00:01:16,563
+and its own file system.
+
+18
+00:01:16,563 --> 00:01:20,841
+A userland of 80 programs, with a shell, vi, the kilo editor and Lua.
+
+19
+00:01:20,841 --> 00:01:25,800
+And two big ports: Doom, and the real Neovim, which is slow to start under QEMU.
+
+20
+00:01:26,800 --> 00:01:31,354
+Pipes work, Lua runs, and the finale is Doom, launched from the shell.
+
+21
+00:01:32,350 --> 00:01:33,049
+The limits.
+
+22
+00:01:33,049 --> 00:01:35,525
+Single core, at most sixteen processes.
+
+23
+00:01:35,525 --> 00:01:38,701
+The bobfs file system has no cache and no journal.
+
+24
+00:01:38,701 --> 00:01:41,241
+Kernel mode exceptions halt the machine.
+
+25
+00:01:41,241 --> 00:01:43,718
+There is no networking, sound or U S B.
+
+26
+00:01:43,718 --> 00:01:46,639
+It is a learning O S, not a Linux replacement.
+
+27
+00:01:47,640 --> 00:01:53,793
+Clone the repo, run iso dot s h, then qemu dot s h, and boot it.
+

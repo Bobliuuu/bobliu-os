@@ -1,0 +1,46 @@
+{
+ "iso_mb": 51.6,
+ "initrd_mb": 42.9,
+ "kernel_kb": 453,
+ "programs": 80,
+ "test_programs": 18,
+ "build_seconds": 15,
+ "loc": {
+  "kernel": 7313,
+  "libc": 9478,
+  "user": 4735
+ },
+ "loc_rows": [
+  {
+   "part": "kernel (C + asm)",
+   "lines": 7313
+  },
+  {
+   "part": "libc (incl. vendored musl libm)",
+   "lines": 9478
+  },
+  {
+   "part": "user programs",
+   "lines": 4735
+  }
+ ],
+ "loc_total": 21526,
+ "size_rows": [
+  {
+   "item": "kernel",
+   "mb": 0.45
+  },
+  {
+   "item": "Freedoom IWAD",
+   "mb": 27.3
+  },
+  {
+   "item": "initrd (all programs + IWAD)",
+   "mb": 42.9
+  },
+  {
+   "item": "bootable ISO",
+   "mb": 51.6
+  }
+ ]
+}
